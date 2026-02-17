@@ -1,30 +1,24 @@
 <script setup lang="ts">
-import { useAuth0 } from '@auth0/auth0-vue';
+import { SignedIn, SignedOut, SignInButton, UserButton, useUser } from '@clerk/vue';
 
-const { loginWithRedirect, user, isAuthenticated, logout } = useAuth0();
-
-const handleLogin = () => {
-  loginWithRedirect();
-};
-
-const handleLogout = () => {
-  logout({ logoutParams: { returnTo: window.location.origin } });
-};
+const { user } = useUser();
 </script>
 
 <template>
   <div class="home">
     <h1>Welcome to Guess Who AI</h1>
-    <div v-if="!isAuthenticated">
-      <button @click="handleLogin">Log In</button>
-    </div>
-    <div v-else>
-      <h2>Hello, {{ user?.name }}</h2>
-      <router-link to="/game">
-        <button>Start Game</button>
-      </router-link>
-      <button @click="handleLogout">Log Out</button>
-    </div>
+    <SignedOut>
+      <SignInButton />
+    </SignedOut>
+    <SignedIn>
+      <h2>Hello, {{ user?.firstName }}</h2>
+      <UserButton />
+      <div class="actions">
+        <router-link to="/lobby/new">
+            <button>Create New Game</button>
+        </router-link>
+      </div>
+    </SignedIn>
   </div>
 </template>
 

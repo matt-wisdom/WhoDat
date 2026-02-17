@@ -1,13 +1,29 @@
 import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
-import { checkJwt } from './middleware/auth.js';
+import { checkJwt, authMiddleware } from './middleware/auth.js';
 import gameRoutes from './routes/game.js';
+import { setupSocket } from './socket.js';
 
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*", 
+    methods: ["GET", "POST"]
+  }
+});
+
+// Setup Clerk middleware
+app.use(authMiddleware);
+
+setupSocket(io);
+
 const port = process.env.PORT || 8080;
 
 app.use(helmet());
@@ -22,6 +38,6 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/api/game', checkJwt, gameRoutes);
 
-app.listen(port, () => {
+httpServer.listen(port, () => {
   console.log(`Server starting on port ${port}`);
 });

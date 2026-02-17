@@ -1,16 +1,24 @@
 <script setup lang="ts">
-import { RouterView } from 'vue-router'
+import { onMounted } from 'vue';
+import { useGameStore } from './stores/game.js';
+
+const store = useGameStore();
+
+onMounted(() => {
+  store.connect();
+});
 </script>
 
 <template>
-  <header>
-    <nav>
-      <!-- Navigation can go here -->
-    </nav>
-  </header>
-
-  <RouterView />
+  <div class="container">
+    <router-view></router-view>
+  </div>
 </template>
 
 <style scoped>
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
 </style>

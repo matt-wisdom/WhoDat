@@ -1,0 +1,19 @@
+# txtai configuration
+
+# Embeddings for similarity search (Guess checking)
+embeddings:
+  path: sentence-transformers/all-MiniLM-L6-v2
+
+# Extractor for Q&A
+extractor:
+  path: google/flan-t5-base
+  quantize: true
+
+# Workflow combining them
+workflow:
+  qa:
+    tasks:
+      - action: extractor
+  similarity:
+    tasks:
+      - action: embeddings

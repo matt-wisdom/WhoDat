@@ -1,0 +1,1 @@
+{"root":["./src/main.ts","./src/router/index.ts","./src/stores/game.ts","./src/app.vue","./src/views/gameview.vue","./src/views/homeview.vue","./src/views/lobbyview.vue"],"version":"5.9.3"}
