@@ -12,14 +12,23 @@ export const useGameStore = defineStore('game', () => {
     const logs = ref<any[]>([]);
     const error = ref<string>('');
 
+    const publicRooms = ref<any[]>([]);
+    const invites = ref<any[]>([]);
+
     // Connect to backend
     const connect = async () => {
         if (socket.value) return;
         
         let token = '';
+        let userId = '';
         try {
             // @ts-ignore
-            token = await window.Clerk?.session?.getToken();
+            if (window.Clerk) {
+                // @ts-ignore
+                token = await window.Clerk.session?.getToken();
+                // @ts-ignore
+                userId = window.Clerk.user?.id;
+            }
         } catch (e) {
             console.error('Failed to get token', e);
         }
@@ -33,6 +42,9 @@ export const useGameStore = defineStore('game', () => {
         socket.value.on('connect', () => {
              myId.value = socket.value?.id || '';
              console.log('Connected to server:', myId.value);
+             if (userId) {
+                 socket.value?.emit('register_user', { userId });
+             }
         });
 
         socket.value.on('room_update', (room: any) => {
@@ -53,18 +65,41 @@ export const useGameStore = defineStore('game', () => {
             logs.value.push(result);
         });
 
+        socket.value.on('invite_received', (invite: any) => {
+            console.log('Invite received:', invite);
+            invites.value.push(invite);
+            // Ideally trigger a toast notification here
+        });
+
         socket.value.on('error', (msg: string) => {
             error.value = msg;
             console.error(msg);
         });
     };
 
-    const createRoom = (playerName: string) => {
+    const createRoom = (playerName: string, isPublic: boolean = false) => {
         return new Promise<string>((resolve) => {
-             socket.value?.emit('create_room', { playerName }, (res: any) => {
+             socket.value?.emit('create_room', { playerName, isPublic }, (res: any) => {
                  roomId.value = res.roomId;
                  resolve(res.roomId);
              });
+        });
+    };
+
+    const getPublicRooms = () => {
+        return new Promise<void>((resolve) => {
+            socket.value?.emit('get_public_rooms', (res: any) => {
+                publicRooms.value = res.rooms;
+                resolve();
+            });
+        });
+    };
+
+    const invitePlayer = (targetUserId: string, inviterName: string) => {
+        return new Promise<any>((resolve) => {
+            socket.value?.emit('invite_player', { targetUserId, roomId: roomId.value, inviterName }, (res: any) => {
+                resolve(res);
+            });
         });
     };
 
@@ -99,10 +134,14 @@ export const useGameStore = defineStore('game', () => {
         myId,
         logs,
         error,
+        publicRooms,
+        invites,
         connect,
         createRoom,
         joinRoom,
         startGame,
-        submitAction
+        submitAction,
+        getPublicRooms,
+        invitePlayer
     };
 });

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import { useUser } from '@clerk/vue';
 import { useRoute } from 'vue-router';
 import { useGameStore } from '../stores/game';
 
@@ -13,6 +14,21 @@ const isHost = computed(() => store.players.length > 0 && store.players[0]?.id =
 
 const startGame = () => {
   store.startGame();
+};
+
+const inviteTarget = ref('');
+const inviteStatus = ref('');
+const { user } = useUser();
+
+const handleInvite = async () => {
+    if (!inviteTarget.value) return;
+    inviteStatus.value = 'Sending...';
+    try {
+        const res = await store.invitePlayer(inviteTarget.value, user.value?.firstName || 'Friend');
+        inviteStatus.value = res.message;
+    } catch (e) {
+        inviteStatus.value = 'Failed to send invite.';
+    }
 };
 </script>
 
@@ -37,6 +53,16 @@ const startGame = () => {
     <div v-else>
       <p>Waiting for host to start...</p>
     </div>
+    
+    <div class="invite-section">
+        <h3>Invite Players</h3>
+        <p>Share Room Code: <strong>{{ roomId }}</strong></p>
+        <div class="invite-form">
+            <input v-model="inviteTarget" placeholder="User ID to invite" />
+            <button @click="handleInvite">Send Invite</button>
+        </div>
+        <p v-if="inviteStatus">{{ inviteStatus }}</p>
+    </div>
   </div>
 </template>
 
@@ -54,5 +80,21 @@ li {
 }
 .controls {
   margin-top: 2rem;
+}
+.invite-section {
+    margin-top: 2rem;
+    padding: 1rem;
+    border-top: 1px solid #eee;
+}
+.invite-form {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+input {
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
 }
 </style>

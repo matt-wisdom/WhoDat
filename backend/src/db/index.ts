@@ -19,9 +19,16 @@ const initDb = () => {
             category TEXT DEFAULT 'Animal',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             players_json TEXT DEFAULT '[]', -- Storing players as JSON for simplicity
-            settings_json TEXT DEFAULT '{}'
+            settings_json TEXT DEFAULT '{}',
+            is_public BOOLEAN DEFAULT 0
         )
     `).run();
+
+    // Migration: Add is_public if missing (for existing DBs)
+    const columns = db.prepare('PRAGMA table_info(rooms)').all() as any[];
+    if (!columns.find(c => c.name === 'is_public')) {
+        db.prepare('ALTER TABLE rooms ADD COLUMN is_public BOOLEAN DEFAULT 0').run();
+    }
     
     console.log('Database initialized at', dbPath);
 };

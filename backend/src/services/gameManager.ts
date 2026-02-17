@@ -24,6 +24,7 @@ interface Room {
     category: string;
     rounds: number;
     createdAt?: string;
+    isPublic: boolean;
 }
 
 class GameManager {
@@ -39,20 +40,36 @@ class GameManager {
             currentTurnIndex: row.current_turn_index,
             category: row.category,
             rounds: 0,
-            createdAt: row.created_at
+            createdAt: row.created_at,
+            isPublic: !!row.is_public
         };
     }
 
-    createRoom(hostId: string, hostName: string): string {
+    createRoom(hostId: string, hostName: string, isPublic: boolean = false): string {
         const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
         const players: Player[] = [{ id: hostId, name: hostName, score: 0, isReady: false }];
         
         db.prepare(`
-            INSERT INTO rooms (id, host_id, players_json, category)
-            VALUES (?, ?, ?, ?)
-        `).run(roomId, hostId, JSON.stringify(players), 'Animal');
+            INSERT INTO rooms (id, host_id, players_json, category, is_public)
+            VALUES (?, ?, ?, ?, ?)
+        `).run(roomId, hostId, JSON.stringify(players), 'Animal', isPublic ? 1 : 0);
         
         return roomId;
+    }
+
+    getPublicRooms(): Room[] {
+        try {
+            const rows = db.prepare(`
+                SELECT * FROM rooms 
+                WHERE is_public = 1 AND state = 'LOBBY'
+                ORDER BY created_at DESC
+                LIMIT 20
+            `).all();
+            return rows.map(r => this.parseRoom(r)).filter(r => r !== null) as Room[];
+        } catch (e) {
+            console.error('Error getting public rooms:', e);
+            return [];
+        }
     }
 
     joinRoom(roomId: string, playerId: string, playerName: string): Room | null {
