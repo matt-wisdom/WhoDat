@@ -11,6 +11,7 @@ export const useGameStore = defineStore('game', () => {
     const myId = ref<string>('');
     const logs = ref<any[]>([]);
     const error = ref<string>('');
+    const winner = ref<any>(null); // For Game Over screen
 
     const publicRooms = ref<any[]>([]);
     const invites = ref<any[]>([]);
@@ -60,7 +61,21 @@ export const useGameStore = defineStore('game', () => {
             players.value = room.players;
             currentTurn.value = room.players[room.currentTurnIndex]?.id || '';
             gameState.value = 'PLAYING';
+            winner.value = null; // Reset winner
+            logs.value = []; // Reset logs
             // Logic to transition to Game View if not already
+        });
+        
+        socket.value.on('game_over', ({ winner: w, players: p }: any) => {
+             console.log('Game Over', w);
+             winner.value = w;
+             players.value = p; // Update players to show all identities (backend should reveal them or we assume they are revealed)
+             gameState.value = 'ENDED';
+        });
+
+        socket.value.on('game_cancelled', () => {
+            alert('The host has cancelled the game.');
+            window.location.href = '/'; // Simple redirect for now
         });
         
         socket.value.on('turn_result', (result: any) => {
@@ -85,9 +100,9 @@ export const useGameStore = defineStore('game', () => {
         }
     };
 
-    const createRoom = (playerName: string, isPublic: boolean = false) => {
+    const createRoom = (playerName: string, category: string, isPublic: boolean = false) => {
         return new Promise<string>((resolve) => {
-             socket.value?.emit('create_room', { playerName, isPublic }, (res: any) => {
+             socket.value?.emit('create_room', { playerName, category, isPublic }, (res: any) => {
                  roomId.value = res.roomId;
                  if (res.room) {
                      players.value = res.room.players;
@@ -159,6 +174,7 @@ export const useGameStore = defineStore('game', () => {
         submitAction,
         getPublicRooms,
         invitePlayer,
-        registerUser
+        registerUser,
+        winner
     };
 });

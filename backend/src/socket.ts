@@ -4,6 +4,24 @@ import { gameManager } from './services/gameManager.js';
 const userSockets = new Map<string, string>(); // userId -> socketId
 
 export const setupSocket = (io: Server) => {
+    const broadcastRoomUpdate = (roomId: string, room: any) => {
+        io.in(roomId).fetchSockets().then(sockets => {
+            sockets.forEach(socket => {
+                const sanitizedRoom = gameManager.getSanitizedRoom(room, socket.id);
+                socket.emit('room_update', sanitizedRoom);
+            });
+        });
+    };
+
+    const broadcastGameStarted = (roomId: string, room: any) => {
+         io.in(roomId).fetchSockets().then(sockets => {
+            sockets.forEach(socket => {
+                const sanitizedRoom = gameManager.getSanitizedRoom(room, socket.id);
+                socket.emit('game_started', sanitizedRoom);
+            });
+        });
+    };
+
     io.on('connection', (socket: Socket) => {
         console.log('User connected:', socket.id);
 
@@ -12,8 +30,8 @@ export const setupSocket = (io: Server) => {
             console.log(`Registered user ${userId} to socket ${socket.id}`);
         });
 
-        socket.on('create_room', ({ playerName, isPublic }, callback) => {
-            const room = gameManager.createRoom(socket.id, playerName, isPublic);
+        socket.on('create_room', ({ playerName, category, isPublic }, callback) => {
+            const room = gameManager.createRoom(socket.id, playerName, category, isPublic);
             socket.join(room.id);
             // Verify room.id is returned in the callback structure expected by frontend
             // Frontend currently expects { roomId }, so we should verify if we change structure.
@@ -22,7 +40,7 @@ export const setupSocket = (io: Server) => {
             // but primarily we want the room.
             callback({ roomId: room.id, room });
             // Also emit update to the room (self) just in case
-            io.to(room.id).emit('room_update', room);
+            broadcastRoomUpdate(room.id, room);
         });
 
         socket.on('get_public_rooms', (callback) => {
@@ -46,8 +64,8 @@ export const setupSocket = (io: Server) => {
             const room = gameManager.joinRoom(roomId, socket.id, playerName);
             if (room) {
                 socket.join(roomId);
-                io.to(roomId).emit('room_update', room);
-                callback({ success: true, room });
+                broadcastRoomUpdate(roomId, room);
+                callback({ success: true, room: gameManager.getSanitizedRoom(room, socket.id) });
             } else {
                 callback({ success: false, error: 'Room not found or game started' });
             }
@@ -56,7 +74,7 @@ export const setupSocket = (io: Server) => {
         socket.on('start_game', ({ roomId }) => {
             gameManager.startGame(roomId).then(room => {
                 if (room) {
-                    io.to(roomId).emit('game_started', room);
+                    broadcastGameStarted(roomId, room);
                 }
             });
         });
@@ -72,7 +90,14 @@ export const setupSocket = (io: Server) => {
                     correct: result.correct
                 });
                 
-                io.to(roomId).emit('room_update', result.roomState);
+                if ((result as any).gameEnded) {
+                    io.to(roomId).emit('game_over', {
+                        winner: (result as any).winner,
+                        players: result.roomState.players
+                    });
+                }
+                
+                broadcastRoomUpdate(roomId, result.roomState);
                 
             } catch (error) {
                 socket.emit('error', (error as Error).message);
@@ -80,7 +105,15 @@ export const setupSocket = (io: Server) => {
         });
 
         socket.on('disconnect', () => {
-            gameManager.removePlayer(socket.id);
+            const result = gameManager.removePlayer(socket.id);
+            if (result) {
+                if (result.gameCancelled) {
+                    io.to(result.roomId).emit('game_cancelled');
+                } else if (result.room) {
+                    broadcastRoomUpdate(result.roomId, result.room);
+                }
+            }
+            
             for (const [uid, sid] of userSockets.entries()) {
                 if (sid === socket.id) {
                     userSockets.delete(uid);

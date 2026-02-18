@@ -24,6 +24,17 @@ const initDb = () => {
         )
     `).run();
 
+    db.prepare(`
+        CREATE TABLE IF NOT EXISTS games_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room_id TEXT NOT NULL,
+            winner_id TEXT,
+            winner_name TEXT,
+            players_json TEXT,
+            played_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `).run();
+
     // Migration: Add is_public if missing (for existing DBs)
     const columns = db.prepare('PRAGMA table_info(rooms)').all() as any[];
     if (!columns.find(c => c.name === 'is_public')) {

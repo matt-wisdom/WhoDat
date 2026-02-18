@@ -38,3 +38,6 @@ pnpm-debug.log*
 dist/
 build/
 node_modules/
+backend/game.db-shm
+backend/game.db-wal
+backend/game.db-shm

@@ -121,7 +121,7 @@ const copyToClipboard = () => {
                                 <span class="room-code">#{{ room.id }}</span>
                                 <span class="player-count">
                                     <Users :size="14" />
-                                    {{ JSON.parse(room.players_json).length }} Players
+                                    {{ room.players ? room.players.length : 0 }} Players
                                 </span>
                             </div>
                             <button class="join-btn" @click="joinRoom(room.id)">

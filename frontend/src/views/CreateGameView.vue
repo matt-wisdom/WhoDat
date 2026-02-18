@@ -9,6 +9,8 @@ const store = useGameStore();
 const { user } = useUser();
 
 const isPublic = ref(false);
+const selectedCategory = ref('People');
+const categories = ['People', 'Animals', 'Countries', 'Places'];
 const isLoading = ref(false);
 
 const handleCreate = async () => {
@@ -17,7 +19,7 @@ const handleCreate = async () => {
   isLoading.value = true;
   const playerName = user.value.firstName || 'Player';
   
-  const roomId = await store.createRoom(playerName, isPublic.value);
+  const roomId = await store.createRoom(playerName, selectedCategory.value, isPublic.value);
   isLoading.value = false;
   
   router.push(`/lobby/${roomId}`);
@@ -29,6 +31,22 @@ const handleCreate = async () => {
     <h2>Create New Game</h2>
     
     <div class="options">
+      <!-- Category Selection -->
+      <div class="category-selection">
+          <h3>Select Category</h3>
+          <div class="category-grid">
+              <div 
+                v-for="cat in categories" 
+                :key="cat" 
+                class="category-card"
+                :class="{ active: selectedCategory === cat }"
+                @click="selectedCategory = cat"
+              >
+                {{ cat }}
+              </div>
+          </div>
+      </div>
+    
       <div class="option" :class="{ active: !isPublic }" @click="isPublic = false">
         <h3>Private Room</h3>
         <p>Invite friends via link or user ID.</p>
@@ -61,9 +79,43 @@ const handleCreate = async () => {
 
 .options {
   display: flex;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 1.5rem;
   margin: 2rem 0;
   justify-content: center;
+}
+
+.category-selection {
+    text-align: left;
+}
+
+.category-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+.category-card {
+    border: 1px solid var(--border-color);
+    padding: 1rem;
+    border-radius: 8px;
+    background: var(--surface-color);
+    cursor: pointer;
+    text-align: center;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+.category-card:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+}
+
+.category-card.active {
+    background: var(--primary-color);
+    color: #0f172a;
+    border-color: var(--primary-color);
 }
 
 .option {
