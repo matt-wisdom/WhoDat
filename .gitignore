@@ -14,7 +14,9 @@ Thumbs.db
 .env.*.local
 # Keep example files
 !.env.example
-
+*.db
+*.db-wal
+*.db-shm
 # Logs
 *.log
 npm-debug.log*
