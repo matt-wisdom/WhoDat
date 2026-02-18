@@ -45,7 +45,7 @@ class GameManager {
         };
     }
 
-    createRoom(hostId: string, hostName: string, isPublic: boolean = false): string {
+    createRoom(hostId: string, hostName: string, isPublic: boolean = false): Room {
         const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
         const players: Player[] = [{ id: hostId, name: hostName, score: 0, isReady: false }];
         
@@ -54,7 +54,7 @@ class GameManager {
             VALUES (?, ?, ?, ?, ?)
         `).run(roomId, hostId, JSON.stringify(players), 'Animal', isPublic ? 1 : 0);
         
-        return roomId;
+        return this.getRoom(roomId)!;
     }
 
     getPublicRooms(): Room[] {
@@ -112,9 +112,24 @@ class GameManager {
         room.currentTurnIndex = 0;
 
         // Assign secret identities
+        // Assign secret identities
+        const assignedTitles = new Set<string>();
+        // Pre-fill with any existing identities (unlikely in fresh start but good for safety)
+        room.players.forEach(p => {
+            if (p.secretIdentity) assignedTitles.add(p.secretIdentity.title);
+        });
+
         for (const player of room.players) {
             if (!player.secretIdentity) {
-                 player.secretIdentity = await getRandomItem(room.category);
+                 let item;
+                 let attempts = 0;
+                 do {
+                     item = await getRandomItem(room.category);
+                     attempts++;
+                 } while (assignedTitles.has(item.title) && attempts < 5);
+                 
+                 assignedTitles.add(item.title);
+                 player.secretIdentity = item;
             }
         }
 

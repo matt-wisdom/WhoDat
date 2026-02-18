@@ -57,6 +57,8 @@ export const useGameStore = defineStore('game', () => {
 
         socket.value.on('game_started', (room: any) => {
             console.log('Game started!', room);
+            players.value = room.players;
+            currentTurn.value = room.players[room.currentTurnIndex]?.id || '';
             gameState.value = 'PLAYING';
             // Logic to transition to Game View if not already
         });
@@ -77,10 +79,20 @@ export const useGameStore = defineStore('game', () => {
         });
     };
 
+    const registerUser = (userId: string) => {
+        if (socket.value && socket.value.connected) {
+             socket.value.emit('register_user', { userId });
+        }
+    };
+
     const createRoom = (playerName: string, isPublic: boolean = false) => {
         return new Promise<string>((resolve) => {
              socket.value?.emit('create_room', { playerName, isPublic }, (res: any) => {
                  roomId.value = res.roomId;
+                 if (res.room) {
+                     players.value = res.room.players;
+                     gameState.value = res.room.gameState;
+                 }
                  resolve(res.roomId);
              });
         });
@@ -108,6 +120,10 @@ export const useGameStore = defineStore('game', () => {
             socket.value?.emit('join_room', { roomId: id, playerName }, (res: any) => {
                 if (res.success) {
                     roomId.value = id;
+                    if (res.room) {
+                        players.value = res.room.players;
+                        gameState.value = res.room.gameState;
+                    }
                     resolve(true);
                 } else {
                     error.value = res.error;
@@ -142,6 +158,7 @@ export const useGameStore = defineStore('game', () => {
         startGame,
         submitAction,
         getPublicRooms,
-        invitePlayer
+        invitePlayer,
+        registerUser
     };
 });

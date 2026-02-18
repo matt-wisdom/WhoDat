@@ -56,6 +56,7 @@ const handleCreate = async () => {
   max-width: 600px;
   margin: 0 auto;
   text-align: center;
+  color: var(--text-primary);
 }
 
 .options {
@@ -66,23 +67,33 @@ const handleCreate = async () => {
 }
 
 .option {
-  border: 2px solid #ccc;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 1.5rem;
   cursor: pointer;
   flex: 1;
   transition: all 0.2s;
-  background: white;
-  color: black;
+  background: var(--surface-color);
+  color: var(--text-primary);
 }
 
 .option:hover {
-    border-color: #666;
+    border-color: var(--primary-color);
+    background: var(--surface-hover);
 }
 
 .option.active {
-  border-color: #4CAF50;
-  background-color: #e8f5e9;
+  border-color: var(--primary-color);
+  background-color: rgba(16, 185, 129, 0.1); /* transparent primary */
+}
+
+h3 {
+    margin-top: 0;
+    color: var(--text-primary);
+}
+p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
 }
 
 .actions {
@@ -95,10 +106,11 @@ button {
   padding: 0.8rem 2rem;
   font-size: 1.1rem;
   cursor: pointer;
-  background-color: #4CAF50;
-  color: white;
+  background-color: var(--primary-color);
+  color: black;
   border: none;
   border-radius: 4px;
+  font-weight: 600;
 }
 
 button:disabled {
@@ -107,6 +119,12 @@ button:disabled {
 }
 
 button.secondary {
-  background-color: #999;
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+button.secondary:hover {
+    color: var(--text-primary);
+    border-color: var(--text-primary);
 }
 </style>

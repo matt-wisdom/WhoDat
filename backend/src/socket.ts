@@ -13,9 +13,16 @@ export const setupSocket = (io: Server) => {
         });
 
         socket.on('create_room', ({ playerName, isPublic }, callback) => {
-            const roomId = gameManager.createRoom(socket.id, playerName, isPublic);
-            socket.join(roomId);
-            callback({ roomId });
+            const room = gameManager.createRoom(socket.id, playerName, isPublic);
+            socket.join(room.id);
+            // Verify room.id is returned in the callback structure expected by frontend
+            // Frontend currently expects { roomId }, so we should verify if we change structure.
+            // Better to send { roomId: room.id, room } or just { room } and update frontend.
+            // I will send { roomId: room.id, room } to be safe and backward compatible if needed, 
+            // but primarily we want the room.
+            callback({ roomId: room.id, room });
+            // Also emit update to the room (self) just in case
+            io.to(room.id).emit('room_update', room);
         });
 
         socket.on('get_public_rooms', (callback) => {

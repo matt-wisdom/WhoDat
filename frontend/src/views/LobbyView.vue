@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch, onMounted } from 'vue';
 import { useUser } from '@clerk/vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game';
 
 const store = useGameStore();
 const route = useRoute();
+const router = useRouter();
 
 const roomId = route.params.roomId as string;
 const players = computed(() => store.players);
@@ -30,6 +31,22 @@ const handleInvite = async () => {
         inviteStatus.value = 'Failed to send invite.';
     }
 };
+
+const checkGameState = () => {
+    if (store.gameState === 'PLAYING') {
+        router.push(`/game/${roomId}`);
+    }
+};
+
+watch(() => store.gameState, (newState) => {
+    if (newState === 'PLAYING') {
+        router.push(`/game/${roomId}`);
+    }
+});
+
+onMounted(() => {
+    checkGameState();
+});
 </script>
 
 <template>
@@ -69,6 +86,7 @@ const handleInvite = async () => {
 <style scoped>
 .lobby {
   text-align: center;
+  color: var(--text-primary);
 }
 ul {
   list-style: none;
@@ -77,6 +95,10 @@ ul {
 li {
   font-size: 1.2rem;
   margin: 0.5rem 0;
+  background: var(--surface-color);
+  padding: 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
 }
 .controls {
   margin-top: 2rem;
@@ -84,7 +106,7 @@ li {
 .invite-section {
     margin-top: 2rem;
     padding: 1rem;
-    border-top: 1px solid #eee;
+    border-top: 1px solid var(--border-color);
 }
 .invite-form {
     display: flex;
@@ -94,7 +116,22 @@ li {
 }
 input {
     padding: 0.5rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--border-color);
     border-radius: 4px;
+    background: var(--bg-color);
+    color: var(--text-primary);
+}
+button {
+    padding: 0.5rem 1rem;
+    background: var(--primary-color);
+    color: black;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+}
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 </style>

@@ -14,6 +14,8 @@ const currentTurnName = computed(() => {
     return p ? p.name : 'Unknown';
 });
 
+const opponents = computed(() => store.players.filter((p: any) => p.id !== store.myId));
+
 const submit = () => {
     if (activeAction.value === 'QUESTION') {
         if (!question.value) return;
@@ -57,21 +59,19 @@ onMounted(() => {
         </div>
 
         <div class="opponents">
-            <!-- Ensure players exist -->
-            <div v-for="player in store.players" :key="player.id" class="player-card">
-                <div v-if="player.id !== store.myId">
-                    <h4>{{ player.name }}</h4>
-                    <!-- Show identity of OTHER players -->
-                    <div v-if="player.secretIdentity" class="identity">
-                        <img v-if="player.secretIdentity.image" :src="player.secretIdentity.image" alt="Identity" class="id-img" />
-                        <p>{{ player.secretIdentity.title }}</p>
-                        <!-- Show summary tooltip or expandable? -->
-                        <details>
-                            <summary>Details</summary>
-                            <p class="summary">{{ player.secretIdentity.summary }}</p>
-                        </details>
-                    </div>
-                    <div v-else>Identity Hidden</div>
+            <div v-for="player in opponents" :key="player.id" class="player-card">
+                <h4>{{ player.name }}</h4>
+                <div v-if="player.secretIdentity" class="identity">
+                    <img v-if="player.secretIdentity.image" :src="player.secretIdentity.image" alt="Identity" class="id-img" />
+                    <p class="id-title">{{ player.secretIdentity.title }}</p>
+                    <details>
+                        <summary>Read Bio</summary>
+                        <p class="summary">{{ player.secretIdentity.summary }}</p>
+                    </details>
+                </div>
+                <div v-else class="identity filtered">
+                     <span class="icon">❓</span>
+                     <p>Identity Hidden</p>
                 </div>
             </div>
         </div>
@@ -84,7 +84,7 @@ onMounted(() => {
             
             <div class="input-area">
                 <input v-if="activeAction === 'QUESTION'" v-model="question" placeholder="Is it an animal?" @keyup.enter="submit" />
-                <input v-else v-model="guess" placeholder="Lion" @keyup.enter="submit" />
+                <input v-else v-model="guess" placeholder="e.g. Batman" @keyup.enter="submit" />
                 <button @click="submit">Submit</button>
             </div>
         </div>
@@ -100,10 +100,11 @@ onMounted(() => {
     display: flex;
     height: 80vh;
     gap: 1rem;
+    color: var(--text-primary);
 }
 .sidebar {
     width: 250px;
-    border-right: 1px solid #ddd;
+    border-right: 1px solid var(--border-color);
     overflow-y: auto;
     padding-right: 1rem;
 }
@@ -113,11 +114,11 @@ onMounted(() => {
     gap: 0.5rem;
 }
 .log-entry {
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--border-color);
     padding-bottom: 0.5rem;
 }
 .correct {
-    color: green;
+    color: var(--primary-color);
     font-weight: bold;
 }
 .main {
@@ -126,50 +127,76 @@ onMounted(() => {
     flex-direction: column;
 }
 .opponents {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1.5rem;
     overflow-y: auto;
+    padding: 1rem;
 }
 .player-card {
-    border: 1px solid #eee;
-    padding: 1rem;
-    margin: 0.5rem;
-    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    padding: 1.5rem;
+    border-radius: 12px;
     text-align: center;
-    width: 200px;
+    background: var(--surface-color);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+.player-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--primary-color);
+}
+.player-card h4 {
+    color: var(--primary-color);
+    font-size: 1.1rem;
+    margin: 0;
 }
 .id-img {
     width: 100px;
     height: 100px;
     object-fit: cover;
     border-radius: 50%;
+    border: 2px solid var(--border-color);
+}
+.id-title {
+    font-weight: 700;
+    font-size: 1.1rem;
+    margin: 0.5rem 0;
+    color: var(--text-primary);
 }
 .summary {
     font-size: 0.8rem;
     text-align: left;
     height: 100px;
     overflow-y: auto;
+    color: var(--text-secondary);
 }
 .turn-indicator {
     padding: 1rem;
-    background: #f0f0f0;
+    background: var(--surface-color);
     text-align: center;
     font-size: 1.5rem;
     margin-bottom: 1rem;
     border-radius: 8px;
+    border: 1px solid var(--border-color);
 }
 .myTurn {
-    background: #e6fffa;
-    color: #006b5f;
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--primary-color);
     font-weight: bold;
-    border: 2px solid #006b5f;
+    border: 2px solid var(--primary-color);
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
 }
 .actions {
     margin-top: auto;
     padding: 1rem;
-    background: #fafafa;
-    border-top: 1px solid #ddd;
+    background: var(--surface-color);
+    border-top: 1px solid var(--border-color);
+    border-radius: 8px 8px 0 0;
 }
 .tabs {
     margin-bottom: 1rem;
@@ -177,13 +204,17 @@ onMounted(() => {
 .tabs button {
     margin-right: 0.5rem;
     padding: 0.5rem 1rem;
-    border: none;
-    background: #ddd;
+    border: 1px solid var(--border-color);
+    background: var(--surface-hover);
+    color: var(--text-secondary);
     cursor: pointer;
+    border-radius: 4px;
 }
 .tabs button.active {
-    background: #333;
-    color: white;
+    background: var(--primary-color);
+    color: #0f172a;
+    border-color: var(--primary-color);
+    font-weight: bold;
 }
 .input-area {
     display: flex;
@@ -191,13 +222,30 @@ onMounted(() => {
 }
 input {
     flex: 1;
-    padding: 0.5rem;
+    padding: 0.8rem;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: 4px;
+}
+input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+.input-area button {
+    padding: 0.8rem 1.5rem;
+    background: var(--primary-color);
+    border: none;
+    border-radius: 4px;
+    color: #0f172a;
+    font-weight: bold;
+    cursor: pointer;
 }
 .waiting {
     margin-top: auto;
     padding: 1rem;
     text-align: center;
     font-style: italic;
-    color: #666;
+    color: var(--text-secondary);
 }
 </style>
