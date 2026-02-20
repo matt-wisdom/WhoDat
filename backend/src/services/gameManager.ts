@@ -11,6 +11,7 @@ interface Player {
     secretIdentity?: {
         title: string;
         summary: string;
+        fullText: string;
         image: string;
     };
     winner?: boolean; // Tag for frontend to highlight winner
@@ -33,6 +34,8 @@ interface Room {
 class GameManager {
     
     private playerRooms = new Map<string, string>(); // socketId -> roomId
+    /** Tracks Q&A history per room so AI can build on previous rounds */
+    private roomHistory = new Map<string, string[]>();
 
     // Helper to parse room from DB row
     private parseRoom(row: any): Room | null {
@@ -150,9 +153,11 @@ class GameManager {
         console.log(`[AI-DEBUG] Generating move with persona: ${persona.name}`);
         
         try {
-            // Ideally passing real history
-            const history = [`My name is ${aiPlayer.name}.`, "I am trying to guess my identity."];
-            const move = await generateAITurn(persona, "I need to guess my identity.", history);
+            // Only pass this AI's own Q&A history — other players' context is irrelevant
+            const allHistory = this.roomHistory.get(roomId) || [];
+            const aiName = aiPlayer.name;
+            const history = allHistory.filter(entry => entry.startsWith(`[${aiName}]`));
+            const move = await generateAITurn(persona, room.category, history);
             console.log(`[AI-DEBUG] Generated move:`, move);
 
             const result = await this.processTurn(roomId, aiPlayer.id, move.action, move.content);
@@ -209,17 +214,14 @@ class GameManager {
         room.gameState = 'PLAYING';
         room.currentTurnIndex = 0;
 
-        // Assign secret identities
-        // Assign secret identities
+        // Always assign fresh identities every game — no stale reuse
         const items = await getRandomItems(room.category, room.players.length);
-        
         room.players.forEach((player, index) => {
-            if (!player.secretIdentity) {
-                // If items run out (unlikely with our list size vs max players), loop or undefined?
-                // For now assuming items.length >= players.length
-                player.secretIdentity = items[index];
-            }
+            player.secretIdentity = items[index];
         });
+
+        // Reset Q&A history for this room
+        this.roomHistory.set(roomId, []);
 
         // Save state
         db.prepare(`
@@ -244,12 +246,14 @@ class GameManager {
 
         if (action === 'QUESTION') {
             if (!currentPlayer.secretIdentity) throw new Error('No secret identity');
-            result = await answerQuestion(content, currentPlayer.secretIdentity.summary);
-            console.log("Question", currentPlayer.secretIdentity.summary, result)
+            const fullText = currentPlayer.secretIdentity.fullText || currentPlayer.secretIdentity.summary;
+            result = await answerQuestion(content, fullText);
+            console.log('Question answered. Context chars:', fullText.length, '| Result:', result, fullText.slice(0, 50));
         } else {
             if (!currentPlayer.secretIdentity) throw new Error('No secret identity');
-            const score = await checkSimilarity(content, currentPlayer.secretIdentity.title);
-            console.log(score)
+            const guessContext = currentPlayer.secretIdentity.fullText || currentPlayer.secretIdentity.summary;
+            const score = await checkSimilarity(content, currentPlayer.secretIdentity.title, guessContext);
+            console.log('Guess score:', score);
             if (score > 0.7) {
                 result = 'Correct!';
                 correct = true;
@@ -274,6 +278,9 @@ class GameManager {
                 return {
                     result,
                     correct,
+                    action,
+                    content,
+                    playerName: currentPlayer.name,
                     nextTurn: '', // No next turn
                     roomState: room,
                     gameEnded: true,
@@ -283,6 +290,14 @@ class GameManager {
                 result = 'Incorrect';
             }
         }
+
+        // Record this Q&A in history so the AI can build on it in future turns
+        const historyEntry = action === 'QUESTION'
+            ? `[${currentPlayer.name}] asked: "${content}" -> Answer: ${result}`
+            : `[${currentPlayer.name}] guessed: "${content}" -> ${result}`;
+        const currentHistory = this.roomHistory.get(roomId) || [];
+        currentHistory.push(historyEntry);
+        this.roomHistory.set(roomId, currentHistory);
 
         // Advance turn
         const nextTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
@@ -312,6 +327,9 @@ class GameManager {
         const turnResult = {
             result,
             correct,
+            action,
+            content,
+            playerName: currentPlayer.name,
             nextTurn: nextTurnId,
             roomState: room,
             gameEnded: false,

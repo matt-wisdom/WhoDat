@@ -22,20 +22,12 @@ export const setupSocket = (io: Server) => {
         });
     };
 
-    // Register AI callback
+    // Register AI callback — fires whenever the AI completes its turn internally
     gameManager.setAIMoveCallback((roomId, result) => {
         io.to(roomId).emit('turn_result', {
-            playerId: result.roomState.players[result.roomState.currentTurnIndex === 0 ? result.roomState.players.length -1 : result.roomState.currentTurnIndex - 1].id, // Previous player was the AI
-            // Actually result object from processTurn has: result, correct, nextTurn, roomState, gameEnded, winner
-            // But turn_result event expects: { playerId, action, content, result, correct } 
-            
-            // We need to reconstruct action/content if possible or adjust frontend to not need it
-            // or pass it in result from gameManager.
-            // Looking at `processTurn` in gameManager, it doesn't return action/content.
-            // Let's just emit the result text for now.
-            // ideally logic should be unified. 
-            
-            // For now, let's just make sure we emit what we have.
+            playerId: result.nextTurn, // The player whose turn it was is now gone; nextTurn points to the next human
+            action: result.action,
+            content: result.content,
             result: result.result,
             correct: result.correct
         });
@@ -112,6 +104,7 @@ export const setupSocket = (io: Server) => {
                 const result = await gameManager.processTurn(roomId, socket.id, action, content);
                 io.to(roomId).emit('turn_result', {
                     playerId: socket.id,
+                    playerName: result.playerName,
                     action,
                     content,
                     result: result.result,

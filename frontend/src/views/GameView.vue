@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { onBeforeRouteLeave, useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game';
 
@@ -33,10 +33,11 @@ const submit = () => {
     }
 };
 
-// Scroll logs
-watch(() => store.logs.length, () => {
-    const logsContainer = document.querySelector('.sidebar');
-    if (logsContainer) logsContainer.scrollTop = logsContainer.scrollHeight;
+// Auto-scroll game log to bottom after each new entry
+const logsEl = ref<HTMLElement | null>(null);
+watch(() => store.logs.length, async () => {
+    await nextTick();
+    if (logsEl.value) logsEl.value.scrollTop = logsEl.value.scrollHeight;
 });
 
 const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -130,16 +131,19 @@ onBeforeRouteLeave((to, from, next) => {
         </div>
     </div>
 
+    <!-- Exit Game Button (top-right) -->
+    <button class="exit-btn" @click="showExitModal = true">Exit Game</button>
+
     <div class="sidebar">
         <h3>Game Log</h3>
-        <div class="logs">
+        <div class="logs" ref="logsEl">
             <div v-for="(log, i) in store.logs" :key="i" class="log-entry">
-                <strong>{{ log.result }}</strong>
-                <p>{{ log.action }}: {{ log.content }}</p>
+                <span class="log-player">{{ log.playerName || 'Unknown' }}</span>
+                <p class="log-action">{{ log.action }}: <em>{{ log.content }}</em></p>
+                <strong class="log-result" :class="{ yes: log.result === 'Yes', correct: log.correct }">{{ log.result }}</strong>
                 <div v-if="log.correct" class="correct">CORRECT!</div>
             </div>
         </div>
-        <button class="exit-btn" @click="showExitModal = true">Exit Game</button>
     </div>
     
     <div class="main">
@@ -208,6 +212,24 @@ onBeforeRouteLeave((to, from, next) => {
 .log-entry {
     border-bottom: 1px solid var(--border-color);
     padding-bottom: 0.5rem;
+}
+.log-player {
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: var(--primary-color);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.log-action {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 0.25rem 0;
+}
+.log-result {
+    font-size: 0.85rem;
+}
+.log-result.yes {
+    color: #10b981;
 }
 .correct {
     color: var(--primary-color);
@@ -420,6 +442,26 @@ input:focus {
     color: #0f172a;
     font-weight: bold;
     cursor: pointer;
+}
+
+.exit-btn {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 500;
+    padding: 0.5rem 1.1rem;
+    background: transparent;
+    border: 1px solid #ef4444;
+    color: #ef4444;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+.exit-btn:hover {
+    background: #ef4444;
+    color: #fff;
 }
 
 @media (max-width: 768px) {

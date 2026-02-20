@@ -10,7 +10,7 @@ if (!apiKey) {
 }
 
 const genAI = new GoogleGenerativeAI(apiKey || '');
-const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
 export const generateResponse = async (prompt: string): Promise<string> => {
   try {
