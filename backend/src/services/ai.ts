@@ -1,37 +1,61 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { pipeline } from '@xenova/transformers';
+import { pipeline } from '@huggingface/transformers';
 import dotenv from 'dotenv';
 import { AIPersona } from './ai_personas.js';
 
 dotenv.config();
 
-// --- Gemini (used for AI turn generation and similarity checks) ---
+// --- Gemini (used for AI turn generation) ---
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-// User requested specific model version
 const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
-// --- Flan-T5 Base (used for Yes/No question answering) ---
-// Base is significantly better than Small at following Yes/No instructions
+// ---------------------------------------------------------------------------
+// Qwen2.5-0.5B-Instruct (local ONNX, used for Yes/No QA and guess checking)
+// ---------------------------------------------------------------------------
+// Uses @huggingface/transformers v3 which supports the `dtype` option to
+// select a specific ONNX quantization file (model_q4f16.onnx here).
+// The pipeline accepts chat-message arrays and applies the tokenizer's built-in
+// chat template automatically, so no hand-crafted prompt strings are needed.
 let _qaModel: any = null;
+
 const getQaModel = async () => {
     if (!_qaModel) {
-        console.log('[AI] Loading Flan-T5 Base for QA...');
-        _qaModel = await pipeline('text2text-generation', 'Xenova/flan-t5-base');
-        console.log('[AI] Flan-T5 Base loaded.');
+        console.log('[AI] Loading onnx-community/Qwen2.5-0.5B-Instruct (q4f16)...');
+        _qaModel = await pipeline(
+            'text-generation',
+            'onnx-community/Qwen2.5-0.5B-Instruct',
+            { dtype: 'q4f16' }  // selects model_q4f16.onnx
+        );
+        console.log('[AI] Qwen2.5-0.5B-Instruct loaded.');
     }
     return _qaModel;
 };
 
+/**
+ * Extracts a Yes/No answer from the model's reply text.
+ * Causal models can include filler words before the answer, so we scan the
+ * beginning of the response rather than rely on a strict startsWith check.
+ */
+const extractYesNo = (raw: string): 'Yes' | 'No' => {
+    const lower = raw.toLowerCase().trim();
+    const head = lower.slice(0, 20);
+    if (head.includes('yes')) return 'Yes';
+    if (head.includes('no')) return 'No';
+    // Broader scan as fallback
+    if (lower.includes('yes')) return 'Yes';
+    return 'No';
+};
+
 export const initAI = async () => {
-    console.log('AI Service initialized with Gemini + Flan-T5 Base.');
-    // Pre-warm QA model so first game turn is fast
+    console.log('AI Service initialized with Gemini (AI turns) + Qwen2.5-0.5B-Instruct (QA).');
+    // Pre-warm QA model so the first game turn is fast
     getQaModel().catch(e => console.error('[AI] Failed to pre-warm QA model:', e));
 };
 
 /**
- * Uses Flan-T5 Base locally to check if a guess matches the secret identity.
- * An optional `context` (Wikipedia fullText) is included in the prompt so the
- * model can handle partial names, nicknames, or alternate spellings.
+ * Uses Qwen2.5-0.5B-Instruct locally to check if a player's guess matches the
+ * secret identity title. Optionally includes Wikipedia `fullText` context so
+ * the model can recognise nicknames, partial names, and alternate spellings.
  */
 export const checkSimilarity = async (
     guess: string,
@@ -40,16 +64,24 @@ export const checkSimilarity = async (
 ): Promise<number> => {
     try {
         const qa = await getQaModel();
-        const contextClause = context
-            ? `\nContext about the answer: ${context.slice(0, 500)}`
+        const contextPart = context
+            ? `Context: ${context.slice(0, 500)}\n\n`
             : '';
-        const prompt =
-            `Answer with only Yes or No.${contextClause}\n` +
-            `Question: Does "${guess}" refer to the same person or thing as "${groundTruth}"? ` +
-            `Ignore spelling differences and consider nicknames or alternate names. Yes or No? Answer: `;
-        const output = await qa(prompt, { max_new_tokens: 5 });
-        const answer = (output[0]?.generated_text || '').trim().toLowerCase();
-        return answer.startsWith('yes') ? 1.0 : 0.0;
+        const userMessage =
+            `${contextPart}` +
+            `Does "${guess}" refer to the same person or thing as "${groundTruth}"? ` +
+            `Ignore spelling differences and consider nicknames or alternate names. ` +
+            `Answer with only Yes or No.`;
+
+        const messages = [
+            { role: 'system', content: 'You are a helpful assistant. Answer with only Yes or No.' },
+            { role: 'user',   content: userMessage },
+        ];
+
+        const output = await qa(messages, { max_new_tokens: 10 });
+        // v3 returns the full conversation; the last message is the assistant reply
+        const raw: string = output[0]?.generated_text?.at(-1)?.content ?? '';
+        return extractYesNo(raw) === 'Yes' ? 1.0 : 0.0;
     } catch (e) {
         console.error('Error in checkSimilarity:', e);
         return 0;
@@ -57,26 +89,45 @@ export const checkSimilarity = async (
 };
 
 /**
- * Uses Flan-T5 Base locally to answer a Yes/No game question based on the
- * target's Wikipedia article text. The `context` should be the `fullText`
- * field from WikiItem which contains up to 4 000 chars of article content.
+ * Uses Qwen2.5-0.5B-Instruct locally to answer a Yes/No game question.
+ * `context` should be the `fullText` field from WikiItem — up to 4 000 chars
+ * of plain-text Wikipedia article content.
  */
 export const answerQuestion = async (question: string, context: string): Promise<string> => {
     try {
         const qa = await getQaModel();
-        // Use up to 4 000 chars — the model's effective context window.
-        // Flan-T5 text2text format: instruction + rich context + question.
-        const prompt = `Answer with only Yes or No.\nContext: ${context.slice(0, 4_000)}\nQuestion: ${question}?. Yes or No?. Answer: `;
-        const output = await qa(prompt, { max_new_tokens: 5 });
-        const answer = (output[0]?.generated_text || '').trim().toLowerCase();
-        return answer.startsWith('yes') ? 'Yes' : 'No';
+        const messages = [
+            {
+                role: 'system',
+                content:
+                    'You are answering questions in a guessing game. ' +
+                    'Use the provided context to answer with only Yes or No.',
+            },
+            {
+                role: 'user',
+                content:
+                    `Context: ${context.slice(0, 4_000)}\n\n` +
+                    `Question: ${question}`,
+            },
+        ];
+
+        const output = await qa(messages, { max_new_tokens: 10 });
+        const raw: string = output[0]?.generated_text?.at(-1)?.content ?? '';
+        return extractYesNo(raw);
     } catch (error) {
-        console.error('Error in answerQuestion (Flan-T5):', error);
+        console.error('Error in answerQuestion (Qwen2.5):', error);
         return 'No';
     }
 };
 
-export const generateAITurn = async (persona: AIPersona, category: string, history: string[]): Promise<{ action: 'QUESTION' | 'GUESS', content: string }> => {
+/**
+ * Uses Gemini to generate the AI player's next turn (ask a question or guess).
+ */
+export const generateAITurn = async (
+    persona: AIPersona,
+    category: string,
+    history: string[]
+): Promise<{ action: 'QUESTION' | 'GUESS'; content: string }> => {
     try {
         const prompt = `
         ${persona.systemPrompt}
@@ -97,25 +148,23 @@ export const generateAITurn = async (persona: AIPersona, category: string, histo
             "content": "your question or guess here"
         }
         `;
+
         const result = await model.generateContent({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: 'application/json' }
+            generationConfig: { responseMimeType: 'application/json' },
         });
 
-        
         const text = result.response.text();
-
-        // Clean markdown code blocks if present
+        // Strip any markdown code fences if present
         const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
         const action = JSON.parse(jsonStr);
-        
+
         return {
             action: action.action === 'GUESS' ? 'GUESS' : 'QUESTION',
-            content: action.content
+            content: action.content,
         };
     } catch (e) {
         console.error('Error generating AI turn:', e);
-        // Fallback
         return { action: 'QUESTION', content: 'Is it a person?' };
     }
 };

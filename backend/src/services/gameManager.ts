@@ -248,7 +248,7 @@ class GameManager {
             if (!currentPlayer.secretIdentity) throw new Error('No secret identity');
             const fullText = currentPlayer.secretIdentity.fullText || currentPlayer.secretIdentity.summary;
             result = await answerQuestion(content, fullText);
-            console.log('Question answered. Context chars:', fullText.length, '| Result:', result, fullText.slice(0, 50));
+            console.log('Question answered. Context chars:', fullText.length, '| Result:', result, fullText.slice(0, 400));
         } else {
             if (!currentPlayer.secretIdentity) throw new Error('No secret identity');
             const guessContext = currentPlayer.secretIdentity.fullText || currentPlayer.secretIdentity.summary;
