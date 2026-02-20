@@ -130,6 +130,18 @@ export const useGameStore = defineStore('game', () => {
         });
     };
 
+    const addAIPlayer = (personaId: string) => {
+         return new Promise<void>((resolve, reject) => {
+             socket.value?.emit('add_ai_player', { roomId: roomId.value, personaId }, (res: any) => {
+                 if (res.success) {
+                    resolve();
+                 } else {
+                    reject(res.error || 'Unknown error');
+                 }
+             });
+         });
+    };
+
     const joinRoom = (id: string, playerName: string) => {
         return new Promise<boolean>((resolve) => {
             socket.value?.emit('join_room', { roomId: id, playerName }, (res: any) => {
@@ -175,6 +187,7 @@ export const useGameStore = defineStore('game', () => {
         getPublicRooms,
         invitePlayer,
         registerUser,
-        winner
+        winner,
+        addAIPlayer
     };
 });

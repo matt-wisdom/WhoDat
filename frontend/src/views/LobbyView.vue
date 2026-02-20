@@ -32,6 +32,18 @@ const handleInvite = async () => {
     }
 };
 
+const selectedPersona = ref('standard');
+const addBot = async () => {
+    inviteStatus.value = 'Adding Bot...';
+    try {
+        await store.addAIPlayer(selectedPersona.value);
+        inviteStatus.value = 'Bot added!';
+        setTimeout(() => inviteStatus.value = '', 2000);
+    } catch (e: any) {
+        inviteStatus.value = `Failed to add bot: ${e.message || e}`;
+    }
+};
+
 const checkGameState = () => {
     if (store.gameState === 'PLAYING') {
         router.push(`/game/${roomId}`);
@@ -44,7 +56,21 @@ watch(() => store.gameState, (newState) => {
     }
 });
 
-onMounted(() => {
+onMounted(async () => {
+    // If we have a roomId but no players/state (likely refresh), try to rejoin
+    if (roomId && (!store.players.length || store.roomId !== roomId)) {
+        console.log('Refreshing or direct link: joining room', roomId);
+        // Ensure connection first
+        await store.connect();
+        
+        // Wait a brief moment for socket to be ready if needed, though connect() should handle it
+        // The joinRoom action in store handles the emit
+        const success = await store.joinRoom(roomId, user.value?.fullName || 'Returning Player');
+        if (!success) {
+            alert('Failed to rejoin room. It may have expired.');
+            router.push('/');
+        }
+    }
     checkGameState();
 });
 </script>
@@ -63,6 +89,21 @@ onMounted(() => {
       <p v-else>Loading players...</p>
     </div>
 
+    <!-- AI Section Moved Up -->
+    <div class="ai-section">
+        <h3>Add Bot Player</h3>
+        <div class="ai-controls">
+            <select v-model="selectedPersona">
+                <option value="standard">Standard AI</option>
+                <option value="sherlock">Sherlock (Logical)</option>
+                <option value="joker">Joker (Chaotic)</option>
+                <option value="toddler">Toddler (Simple)</option>
+            </select>
+            <button @click="addBot" :disabled="!selectedPersona || inviteStatus === 'Adding Bot...'">Add Bot</button>
+        </div>
+        <p v-if="inviteStatus && inviteStatus.includes('Bot')">{{ inviteStatus }}</p>
+    </div>
+
     <div v-if="isHost" class="controls">
       <button @click="startGame" :disabled="players.length < 2">Start Game</button>
       <p v-if="players.length < 2">Need at least 2 players</p>
@@ -72,13 +113,13 @@ onMounted(() => {
     </div>
     
     <div class="invite-section">
-        <h3>Invite Players</h3>
+        <h3>Invite Friend</h3>
         <p>Share Room Code: <strong>{{ roomId }}</strong></p>
         <div class="invite-form">
             <input v-model="inviteTarget" placeholder="User ID to invite" />
             <button @click="handleInvite">Send Invite</button>
         </div>
-        <p v-if="inviteStatus">{{ inviteStatus }}</p>
+        <p v-if="inviteStatus && !inviteStatus.includes('Bot')">{{ inviteStatus }}</p>
     </div>
   </div>
 </template>
@@ -133,5 +174,23 @@ button {
 button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+}
+.ai-section {
+    margin-top: 2rem;
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+.ai-controls {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+select {
+    padding: 0.5rem;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
 }
 </style>

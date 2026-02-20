@@ -2,9 +2,33 @@
 import { onMounted, watch } from 'vue';
 import { useGameStore } from './stores/game';
 import { useUser } from '@clerk/vue';
+import { useRouter } from 'vue-router';
+import GameInviteModal from './components/GameInviteModal.vue';
 
 const store = useGameStore();
 const { user } = useUser();
+const router = useRouter();
+
+const handleAcceptInvite = async (invite: any) => {
+    // Remove from list
+    store.invites = store.invites.filter((i: any) => i !== invite);
+    
+    // Join room
+    const success = await store.joinRoom(invite.roomId, user.value?.fullName || 'Guest');
+    if (success) {
+        if (store.gameState === 'LOBBY') {
+            router.push(`/lobby/${invite.roomId}`);
+        } else {
+            router.push(`/game/${invite.roomId}`);
+        }
+    } else {
+        alert('Failed to join room. It may be full or started.');
+    }
+};
+
+const handleDeclineInvite = (invite: any) => {
+     store.invites = store.invites.filter((i: any) => i !== invite);
+};
 
 onMounted(() => {
   store.connect();
@@ -22,6 +46,12 @@ watch(user, (newUser) => {
 
 <template>
   <div class="container">
+    <GameInviteModal 
+        v-if="store.invites.length > 0" 
+        :invite="store.invites[0]"
+        @accept="handleAcceptInvite(store.invites[0])"
+        @decline="handleDeclineInvite(store.invites[0])"
+    />
     <router-view></router-view>
   </div>
 </template>

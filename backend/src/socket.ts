@@ -22,6 +22,34 @@ export const setupSocket = (io: Server) => {
         });
     };
 
+    // Register AI callback
+    gameManager.setAIMoveCallback((roomId, result) => {
+        io.to(roomId).emit('turn_result', {
+            playerId: result.roomState.players[result.roomState.currentTurnIndex === 0 ? result.roomState.players.length -1 : result.roomState.currentTurnIndex - 1].id, // Previous player was the AI
+            // Actually result object from processTurn has: result, correct, nextTurn, roomState, gameEnded, winner
+            // But turn_result event expects: { playerId, action, content, result, correct } 
+            
+            // We need to reconstruct action/content if possible or adjust frontend to not need it
+            // or pass it in result from gameManager.
+            // Looking at `processTurn` in gameManager, it doesn't return action/content.
+            // Let's just emit the result text for now.
+            // ideally logic should be unified. 
+            
+            // For now, let's just make sure we emit what we have.
+            result: result.result,
+            correct: result.correct
+        });
+
+        if (result.gameEnded) {
+            io.to(roomId).emit('game_over', {
+                winner: result.winner,
+                players: result.roomState.players
+            });
+        }
+        
+        broadcastRoomUpdate(roomId, result.roomState);
+    });
+
     io.on('connection', (socket: Socket) => {
         console.log('User connected:', socket.id);
 
@@ -119,6 +147,32 @@ export const setupSocket = (io: Server) => {
                     userSockets.delete(uid);
                     break;
                 }
+            }
+        });
+
+        socket.on('add_ai_player', ({ roomId, personaId }, callback) => {
+            console.log(`[SOCKET] Request to add AI ${personaId} to room ${roomId}`);
+            try {
+                const room = gameManager.addAIPlayer(roomId, personaId);
+                if (room) {
+                     console.log(`[SOCKET] AI added. Broadcasting update to room ${roomId}`);
+                     // Use specific broadcast function if available, or raw emit
+                     // Re-using broadcastRoomUpdate logic here manually to ensure consistency
+                     io.in(roomId).fetchSockets().then(sockets => {
+                        sockets.forEach(s => {
+                            const sanitizedRoom = gameManager.getSanitizedRoom(room, s.id);
+                            s.emit('room_update', sanitizedRoom);
+                        });
+                    });
+                     
+                     callback({ success: true });
+                } else {
+                    console.error(`[SOCKET] Failed to add AI: Room not found or not in LOBBY`);
+                    callback({ success: false, error: 'Failed to add AI (Invalid room or state)' });
+                }
+            } catch (e) {
+                console.error('[SOCKET] Error adding AI:', e);
+                callback({ success: false, error: 'Internal Server Error' });
             }
         });
     });

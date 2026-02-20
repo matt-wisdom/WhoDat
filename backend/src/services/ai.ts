@@ -1,77 +1,103 @@
-import { pipeline, env } from '@xenova/transformers';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import dotenv from 'dotenv';
+import { AIPersona } from './ai_personas.js';
 
-// Skip local model checks if needed, or configure cache
-env.allowLocalModels = false; // Force download from HF initially
-env.useBrowserCache = false;
+dotenv.config();
 
-// Singleton instances
-let similarityModel: any = null;
-let qaModel: any = null;
+// Initialize Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+// User requested specific model version
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
 export const initAI = async () => {
-    console.log('Loading AI models... this may take a moment on first run.');
-    
-    // Feature extraction for similarity (Embeddings)
-    if (!similarityModel) {
-        similarityModel = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-    }
-
-    // Text2Text for QA
-    if (!qaModel) {
-        qaModel = await pipeline('text2text-generation', 'Xenova/flan-t5-small');
-    }
-    
-    console.log('AI Models loaded.');
+    console.log('AI Service initialized with Gemini.');
 };
 
-// Compute Cosine Similarity
-function cosineSimilarity(a: number[], b: number[]) {
-    const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
-    const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
-    const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
-    return dotProduct / (magnitudeA * magnitudeB);
-}
-
 export const checkSimilarity = async (guess: string, groundTruth: string): Promise<number> => {
-    if (!similarityModel) await initAI();
-    
+    // We can use Gemini to judge similarity too, simpler than embeddings for now?
+    // Or we can keep the local embedding model if user wants, but Gemini is requested.
+    // Let's use Gemini to judge "Is X the same as Y?"
     try {
-        const output1 = await similarityModel(guess, { pooling: 'mean', normalize: true });
-        const output2 = await similarityModel(groundTruth, { pooling: 'mean', normalize: true });
-        
-        const vec1 = Array.from(output1.data) as number[];
-        const vec2 = Array.from(output2.data) as number[];
-        
-        return cosineSimilarity(vec1, vec2);
-    } catch (error) {
-        console.error('Error in checkSimilarity:', error);
-        return 0;
+        const prompt = `
+        Decide if the guess "${guess}" is semantically equivalent to or refers to the same thing as the secret identity "${groundTruth}".
+        Ignore minor spelling mistakes or variations (e.g. "Obama" == "Barack Obama").
+        Return a score between 0.0 and 1.0 where 1.0 is a match and 0.0 is completely different.
+        Return ONLY the number.
+        `;
+        const result = await model.generateContent(prompt);
+        const score = parseFloat(result.response.text());
+        return isNaN(score) ? 0 : score;
+    } catch (e) {
+        console.error('Error in checkSimilarity:', e);
+        return 0; // Fail safe
     }
 };
 
 export const answerQuestion = async (question: string, context: string): Promise<string> => {
-    if (!qaModel) await initAI();
-
     try {
-        // Prompt engineering for FLAN-T5
-        // We act as a strict classifier.
-        const prompt = `Context: ${context}\nQuestion: ${question}\nAnswer yes/no/maybe:`;
-        const output = await qaModel(prompt, { max_new_tokens: 10 });
+        const prompt = `
+        Context: ${context}
+        Question: ${question}
         
-        let answer = output[0]?.generated_text || '';
-        console.log(`[AI Raw] Q: "${question}" -> A: "${answer}"`); // Log for debug
+        You are the Game Master. Answer the question based ONLY on the context provided.
+        Rules:
+        1. Answer ONLY "Yes" or "No".
+        2. If the answer is unsure or maybe, default to "No".
+        3. Do not explain.
         
-        // Strict Post-processing
-        const normalized = answer.toLowerCase().trim();
+        Answer:`;
         
-        if (normalized.includes('yes')) return 'Yes';
-        if (normalized.includes('no')) return 'No';
-        if (normalized.includes('maybe') || normalized.includes('unsure') || normalized.includes('depend')) return 'Maybe';
-
-        // Fallback for unable to determine
-        return 'Maybe';
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().trim().toLowerCase();
+        
+        if (text.includes('yes')) return 'Yes';
+        return 'No';
     } catch (error) {
         console.error('Error in answerQuestion:', error);
-        return 'Maybe';
+        return 'No';
+    }
+};
+
+export const generateAITurn = async (persona: AIPersona, context: string, history: string[]): Promise<{ action: 'QUESTION' | 'GUESS', content: string }> => {
+    try {
+        const prompt = `
+        ${persona.systemPrompt}
+        
+        Current Game Context:
+        We are playing "Who am I?". The goal is to guess a secret identity.
+        
+        Game State:
+        ${history.length > 0 ? 'History:\n' + history.join('\n') : 'No history yet.'}
+        
+        It is your turn.
+        You can either:
+        1. Ask a YES/NO question to narrow down the identity.
+        2. Make a GUESS if you are confident.
+        
+        Output Format (JSON ONLY):
+        {
+            "action": "QUESTION" or "GUESS",
+            "content": "your question or guess here"
+        }
+        `;
+        
+        const result = await model.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: 'application/json' }
+        });
+        
+        const text = result.response.text();
+        // Clean markdown code blocks if present
+        const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        const action = JSON.parse(jsonStr);
+        
+        return {
+            action: action.action === 'GUESS' ? 'GUESS' : 'QUESTION',
+            content: action.content
+        };
+    } catch (e) {
+        console.error('Error generating AI turn:', e);
+        // Fallback
+        return { action: 'QUESTION', content: 'Is it a person?' };
     }
 };

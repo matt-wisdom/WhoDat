@@ -1,2 +1,0 @@
-txtai[api, pipeline]
-uvicorn

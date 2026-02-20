@@ -1,6 +1,6 @@
-import { Socket } from 'socket.io';
 import { getRandomItem, getRandomItems } from './wikipedia.js';
-import { checkSimilarity, answerQuestion } from './ai.js';
+import { checkSimilarity, answerQuestion, generateAITurn } from './ai.js';
+import { AI_PERSONAS } from './ai_personas.js';
 import db from '../db/index.js';
 
 interface Player {
@@ -14,6 +14,8 @@ interface Player {
         image: string;
     };
     winner?: boolean; // Tag for frontend to highlight winner
+    isAI?: boolean;
+    personaId?: string;
 }
 
 interface Room {
@@ -62,6 +64,31 @@ class GameManager {
         return this.getRoom(roomId)!;
     }
 
+    addAIPlayer(roomId: string, personaId: string): Room | null {
+        const room = this.getRoom(roomId);
+        if (!room || room.gameState !== 'LOBBY') return null;
+
+        const persona = AI_PERSONAS[personaId];
+        if (!persona) return null;
+
+        const aiId = `ai_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        const aiPlayer: Player = {
+            id: aiId,
+            name: `${persona.name} (Bot)`,
+            score: 0,
+            isReady: true,
+            isAI: true,
+            personaId: persona.id
+        };
+
+        room.players.push(aiPlayer);
+        this.updateRoomPlayers(roomId, room.players);
+        // Map AI to room so we can find it if needed (though they don't have sockets)
+        this.playerRooms.set(aiId, roomId);
+
+        return this.getRoom(roomId);
+    }
+
     getPublicRooms(): Room[] {
         try {
             const rows = db.prepare(`
@@ -97,6 +124,51 @@ class GameManager {
         this.playerRooms.set(playerId, roomId);
 
         return room;
+    }
+
+    private async takeAITurn(roomId: string, aiPlayer: Player) {
+        console.log(`[AI-DEBUG] Starting turn for ${aiPlayer.name} (${aiPlayer.id}) in room ${roomId}`);
+        
+        const room = this.getRoom(roomId);
+        if (!room) {
+            console.error(`[AI-DEBUG] Room ${roomId} not found during AI turn`);
+            return;
+        }
+        if (room.gameState !== 'PLAYING') {
+             console.log(`[AI-DEBUG] Game not playing (state: ${room.gameState}). Aborting AI turn.`);
+             return;
+        }
+
+        // Double check it's still their turn
+        const currentPlayer = room.players[room.currentTurnIndex];
+        if (currentPlayer.id !== aiPlayer.id) {
+            console.error(`[AI-DEBUG] It is not AI's turn! Current: ${currentPlayer.id}, AI: ${aiPlayer.id}`);
+            return;
+        }
+
+        const persona = AI_PERSONAS[aiPlayer.personaId || 'standard'];
+        console.log(`[AI-DEBUG] Generating move with persona: ${persona.name}`);
+        
+        try {
+            // Ideally passing real history
+            const history = [`My name is ${aiPlayer.name}.`, "I am trying to guess my identity."];
+            const move = await generateAITurn(persona, "I need to guess my identity.", history);
+            console.log(`[AI-DEBUG] Generated move:`, move);
+
+            const result = await this.processTurn(roomId, aiPlayer.id, move.action, move.content);
+            console.log(`[AI-DEBUG] Turn processed. Result:`, result ? 'Success' : 'Null');
+
+        } catch (e) {
+            console.error('[AI-DEBUG] Error during AI turn execution:', e);
+        }
+    }
+    
+    // Event Emitter for AI turns
+    public aiMoveCallback: ((roomId: string, result: any) => void) | null = null;
+    
+    setAIMoveCallback(cb: (roomId: string, result: any) => void) {
+        console.log('[AI-DEBUG] AI Move Callback Registered');
+        this.aiMoveCallback = cb;
     }
 
     getRoom(roomId: string): Room | null {
@@ -160,6 +232,7 @@ class GameManager {
     }
 
     async processTurn(roomId: string, playerId: string, action: 'QUESTION' | 'GUESS', content: string) {
+        console.log(`[GAME-DEBUG] Processing turn for ${playerId}: ${action} "${content}"`);
         let room = this.getRoom(roomId);
         if (!room) throw new Error('Room not found');
 
@@ -223,13 +296,39 @@ class GameManager {
 
         // Fetch updated room
         room = this.getRoom(roomId)!;
+        const nextPlayer = room.players[nextTurnIndex];
+        const nextTurnId = nextPlayer.id;
 
-        return {
+        // Trigger AI if next
+        if (nextPlayer.isAI) {
+            console.log(`[GAME-DEBUG] Next player is AI (${nextPlayer.name}). Scheduling turn in 2000ms.`);
+            setTimeout(() => {
+                this.takeAITurn(roomId, nextPlayer).catch(e => console.error('[AI-DEBUG] Async AI Turn Error:', e));
+            }, 2000);
+        } else {
+             console.log(`[GAME-DEBUG] Next player is Human (${nextPlayer.name}). Waiting for input.`);
+        }
+
+        const turnResult = {
             result,
             correct,
-            nextTurn: room.players[nextTurnIndex].id,
-            roomState: room
+            nextTurn: nextTurnId,
+            roomState: room,
+            gameEnded: false,
+            winner: null
         };
+
+        // If this was an AI turn (called internally), we need to broadcast via callback
+        if (currentPlayer.isAI) {
+            if (this.aiMoveCallback) {
+                console.log(`[GAME-DEBUG] Broadcasting AI turn result for ${currentPlayer.name}`);
+                this.aiMoveCallback(roomId, turnResult);
+            } else {
+                console.error('[GAME-DEBUG] CRITICAL: No aiMoveCallback set!');
+            }
+        }
+
+        return turnResult;
     }
     
     removePlayer(socketId: string): { roomId: string, room: Room | null, gameCancelled?: boolean } | null {
@@ -276,6 +375,52 @@ class GameManager {
         
         return { roomId, room: this.getRoom(roomId) };
     }
+    startCleanupInterval() {
+        // Run every 10 minutes
+        setInterval(() => {
+            this.cleanupStaleLobbies();
+        }, 10 * 60 * 1000);
+    }
+
+    private cleanupStaleLobbies() {
+        console.log('Running stale lobby cleanup...');
+        try {
+            // Find stale rooms (LOBBY state, created > 1 hour ago)
+            const staleRooms = db.prepare(`
+                SELECT id FROM rooms 
+                WHERE state = 'LOBBY' 
+                AND created_at <= datetime('now', '-1 hour')
+            `).all() as { id: string }[];
+
+            if (staleRooms.length === 0) return;
+
+            console.log(`Found ${staleRooms.length} stale rooms to clean up.`);
+
+            staleRooms.forEach(({ id }) => {
+                const room = this.getRoom(id);
+                if (room) {
+                    // Notify players if possible (though connection might be dead)
+                    // We can try to emit to the room roomID
+                    // But we don't have direct access to 'io' here easily unless we pass it or store it.
+                    // For now, just clean up data.
+                    room.players.forEach(p => this.playerRooms.delete(p.id));
+                }
+            });
+
+            // Delete from DB
+            const info = db.prepare(`
+                DELETE FROM rooms 
+                WHERE state = 'LOBBY' 
+                AND created_at <= datetime('now', '-1 hour')
+            `).run();
+            
+            console.log(`Deleted ${info.changes} stale rooms.`);
+
+        } catch (e) {
+            console.error('Error during lobby cleanup:', e);
+        }
+    }
 }
 
 export const gameManager = new GameManager();
+gameManager.startCleanupInterval();
