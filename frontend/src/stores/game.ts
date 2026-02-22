@@ -29,14 +29,11 @@ export const useGameStore = defineStore('game', () => {
         if (socket.value) return;
 
         let token = '';
-        let userId = '';
         try {
             // @ts-ignore
             if (window.Clerk) {
                 // @ts-ignore
                 token = await window.Clerk.session?.getToken();
-                // @ts-ignore
-                userId = window.Clerk.user?.id;
             }
         } catch (e) {
             console.error('Failed to get token', e);
@@ -47,26 +44,22 @@ export const useGameStore = defineStore('game', () => {
         });
 
         socket.value.on('connect', () => {
-             myId.value = socket.value?.id || '';
-             console.log('Connected to server:', myId.value);
-             if (userId) {
-                 socket.value?.emit('register_user', { userId });
-             }
+            myId.value = socket.value?.id || '';
+            console.log('Connected to server with ID:', myId.value);
         });
 
         socket.value.on('room_update', (room: any) => {
-            console.log('Room update:', room);
-            players.value = room.players;
-            gameState.value = room.gameState;
-            currentTurn.value = room.players[room.currentTurnIndex]?.id || '';
+            if (room) {
+                players.value = room.players;
+                gameState.value = room.gameState;
+                currentTurn.value = room.players?.[room.currentTurnIndex]?.id || '';
+            }
         });
 
         socket.value.on('game_started', (room: any) => {
-            console.log('Game started!', room);
             players.value = room.players;
-            currentTurn.value = room.players[room.currentTurnIndex]?.id || '';
-            gameState.value = 'PLAYING';
-            winner.value = null;
+            gameState.value = room.gameState;
+            currentTurn.value = room.players?.[room.currentTurnIndex]?.id || '';
             logs.value = [];
             endGameVote.value = null;
             hasVotedToEnd.value = false;
@@ -74,12 +67,16 @@ export const useGameStore = defineStore('game', () => {
         });
 
         socket.value.on('game_over', ({ winner: w, players: p }: any) => {
-             console.log('Game Over', w);
-             winner.value = w;
-             players.value = p;
-             gameState.value = 'ENDED';
-             endGameVote.value = null;
-             hasVotedToEnd.value = false;
+            console.log('Game Over', w);
+            winner.value = w;
+            players.value = p;
+            gameState.value = 'ENDED';
+            endGameVote.value = null;
+            hasVotedToEnd.value = false;
+        });
+
+        socket.value.on('player_kicked', () => {
+            gameState.value = 'KICKED';
         });
 
         socket.value.on('game_cancelled', () => {
@@ -108,20 +105,20 @@ export const useGameStore = defineStore('game', () => {
 
     const registerUser = (userId: string) => {
         if (socket.value && socket.value.connected) {
-             socket.value.emit('register_user', { userId });
+            socket.value.emit('register_user', { userId });
         }
     };
 
     const createRoom = (playerName: string, category: string, isPublic: boolean = false) => {
         return new Promise<string>((resolve) => {
-             socket.value?.emit('create_room', { playerName, category, isPublic }, (res: any) => {
-                 roomId.value = res.roomId;
-                 if (res.room) {
-                     players.value = res.room.players;
-                     gameState.value = res.room.gameState;
-                 }
-                 resolve(res.roomId);
-             });
+            socket.value?.emit('create_room', { playerName, category, isPublic }, (res: any) => {
+                roomId.value = res.roomId;
+                if (res.room) {
+                    players.value = res.room.players;
+                    gameState.value = res.room.gameState;
+                }
+                resolve(res.roomId);
+            });
         });
     };
 
@@ -143,15 +140,15 @@ export const useGameStore = defineStore('game', () => {
     };
 
     const addAIPlayer = (personaId: string) => {
-         return new Promise<void>((resolve, reject) => {
-             socket.value?.emit('add_ai_player', { roomId: roomId.value, personaId }, (res: any) => {
-                 if (res.success) {
+        return new Promise<void>((resolve, reject) => {
+            socket.value?.emit('add_ai_player', { roomId: roomId.value, personaId }, (res: any) => {
+                if (res.success) {
                     resolve();
-                 } else {
+                } else {
                     reject(res.error || 'Unknown error');
-                 }
-             });
-         });
+                }
+            });
+        });
     };
 
     const joinRoom = (id: string, playerName: string) => {
@@ -200,6 +197,16 @@ export const useGameStore = defineStore('game', () => {
         socket.value?.emit('vote_end_game', { roomId: roomId.value });
     };
 
+    /** Host-only: remove a player or bot from the lobby. */
+    const kickPlayer = (targetId: string) => {
+        return new Promise<void>((resolve, reject) => {
+            socket.value?.emit('kick_player', { roomId: roomId.value, targetId }, (res: any) => {
+                if (res.success) resolve();
+                else reject(new Error(res.error || 'Failed to kick player'));
+            });
+        });
+    };
+
     return {
         socket,
         roomId,
@@ -225,5 +232,6 @@ export const useGameStore = defineStore('game', () => {
         registerUser,
         addAIPlayer,
         voteEndGame,
+        kickPlayer,
     };
 });

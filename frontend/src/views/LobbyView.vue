@@ -52,6 +52,8 @@ const checkGameState = () => {
 watch(() => store.gameState, (newState) => {
     if (newState === 'PLAYING') {
         router.push(`/game/${roomId}`);
+    } else if (newState === 'KICKED' || newState === 'CANCELLED') {
+        router.push('/');
     }
 });
 
@@ -90,8 +92,13 @@ const notEnoughNames = computed(() =>
     <div class="players">
       <h3>Players</h3>
       <ul v-if="players.length">
-        <li v-for="player in players" :key="player.id">
-          {{ player.name }} <span v-if="player.id === store.myId">(You)</span>
+        <li v-for="player in players" :key="player.id" class="player-row">
+          <span>{{ player.name }} <span v-if="player.id === store.myId">(You)</span></span>
+          <button
+            v-if="isHost && player.id !== store.myId"
+            class="kick-btn"
+            @click="store.kickPlayer(player.id)"
+          >Remove</button>
         </li>
       </ul>
       <p v-else>Loading players...</p>
@@ -171,9 +178,31 @@ li {
   font-size: 1.1rem;
   margin: 0.5rem 0;
   background: var(--surface-color);
-  padding: 0.5rem;
+  padding: 0.5rem 0.75rem;
   border-radius: 4px;
   border: 1px solid var(--border-color);
+}
+.player-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.kick-btn {
+  padding: 0.25rem 0.65rem;
+  background: transparent;
+  border: 1px solid #ef4444;
+  color: #ef4444;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.kick-btn:hover {
+  background: #ef4444;
+  color: #fff;
 }
 .controls {
   margin-top: 2rem;

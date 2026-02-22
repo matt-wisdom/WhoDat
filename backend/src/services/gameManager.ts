@@ -389,7 +389,7 @@ class GameManager {
                     WHERE id = ?
                 `).run('ENDED', JSON.stringify(room.players), roomId);
 
-                return {
+                const winResult = {
                     result,
                     correct,
                     action,
@@ -400,6 +400,14 @@ class GameManager {
                     gameEnded: true,
                     winner: currentPlayer
                 };
+
+                // If the winner is an AI we must broadcast via the callback because
+                // the normal bottom-of-function path is never reached.
+                if (currentPlayer.isAI && this.aiMoveCallback) {
+                    this.aiMoveCallback(roomId, winResult);
+                }
+
+                return winResult;
             } else {
                 result = 'Incorrect';
             }
