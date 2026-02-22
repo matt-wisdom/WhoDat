@@ -1,4 +1,4 @@
-import { getRandomItem, getRandomItems } from './wikipedia.js';
+import { getRandomItem, getRandomItems, fetchPageSummary, fetchFullExtract } from './wikipedia.js';
 import { checkSimilarity, answerQuestion, generateAITurn } from './ai.js';
 import { AI_PERSONAS } from './ai_personas.js';
 import db from '../db/index.js';
@@ -32,10 +32,12 @@ interface Room {
 }
 
 class GameManager {
-    
+
     private playerRooms = new Map<string, string>(); // socketId -> roomId
     /** Tracks Q&A history per room so AI can build on previous rounds */
     private roomHistory = new Map<string, string[]>();
+    /** Tracks end-game votes per room: roomId -> Set of socketIds that voted */
+    private endGameVotes = new Map<string, Set<string>>();
 
     // Helper to parse room from DB row
     private parseRoom(row: any): Room | null {
@@ -129,6 +131,26 @@ class GameManager {
         return room;
     }
 
+    /**
+     * Removes a player from the lobby. Only the host may do this, and only
+     * while the game is still in LOBBY state.
+     * Returns the updated room on success, or null on failure.
+     */
+    kickPlayer(roomId: string, hostId: string, targetId: string): Room | null {
+        const room = this.getRoom(roomId);
+        if (!room || room.gameState !== 'LOBBY') return null;
+        if (room.hostId !== hostId) return null; // only host can kick
+        if (targetId === hostId) return null;     // host cannot kick themselves
+
+        const newPlayers = room.players.filter(p => p.id !== targetId);
+        if (newPlayers.length === room.players.length) return null; // target not found
+
+        this.updateRoomPlayers(roomId, newPlayers);
+        this.playerRooms.delete(targetId);
+
+        return this.getRoom(roomId);
+    }
+
     private async takeAITurn(roomId: string, aiPlayer: Player) {
         console.log(`[AI-DEBUG] Starting turn for ${aiPlayer.name} (${aiPlayer.id}) in room ${roomId}`);
         
@@ -207,28 +229,120 @@ class GameManager {
         return sanitizedRoom;
     }
 
-    async startGame(roomId: string): Promise<Room | null> {
+    async startGame(roomId: string, customNames?: string[]): Promise<Room | null> {
         const room = this.getRoom(roomId);
         if (!room) return null;
 
         room.gameState = 'PLAYING';
         room.currentTurnIndex = 0;
 
-        // Always assign fresh identities every game — no stale reuse
-        const items = await getRandomItems(room.category, room.players.length);
-        room.players.forEach((player, index) => {
-            player.secretIdentity = items[index];
-        });
+        // Reset any leftover end-game votes from a previous session
+        this.endGameVotes.delete(roomId);
+
+        if (customNames && customNames.length >= room.players.length) {
+            // Shuffle so each player gets a different name
+            const shuffled = [...customNames].sort(() => Math.random() - 0.5);
+
+            // Attempt a Wikipedia lookup for each name in parallel.
+            // If a page isn't found or the request fails, fall back to empty strings.
+            console.log(`[StartGame] Fetching Wikipedia data for ${shuffled.length} custom name(s)...`);
+            const identities = await Promise.all(
+                shuffled.slice(0, room.players.length).map(async (name) => {
+                    try {
+                        const [summaryData, fullText] = await Promise.all([
+                            fetchPageSummary(name),
+                            fetchFullExtract(name),
+                        ]);
+                        return {
+                            title: summaryData?.title ?? name,
+                            summary: summaryData?.summary ?? '',
+                            fullText: fullText ?? summaryData?.summary ?? '',
+                            image: summaryData?.image ?? '',
+                        };
+                    } catch {
+                        console.warn(`[StartGame] Wikipedia lookup failed for "${name}", using empty fallback.`);
+                        return { title: name, summary: '', fullText: '', image: '' };
+                    }
+                })
+            );
+
+            room.players.forEach((player, index) => {
+                player.secretIdentity = identities[index];
+            });
+        } else {
+            // Default: fetch from Wikipedia cache
+            const items = await getRandomItems(room.category, room.players.length);
+            room.players.forEach((player, index) => {
+                player.secretIdentity = items[index];
+            });
+        }
 
         // Reset Q&A history for this room
         this.roomHistory.set(roomId, []);
 
         // Save state
         db.prepare(`
-            UPDATE rooms 
-            SET state = ?, current_turn_index = ?, players_json = ? 
+            UPDATE rooms
+            SET state = ?, current_turn_index = ?, players_json = ?
             WHERE id = ?
         `).run('PLAYING', 0, JSON.stringify(room.players), roomId);
+
+        return this.getRoom(roomId);
+    }
+
+    /**
+     * Records a vote to end the game from `socketId`.
+     * Returns the current vote tally and whether the game has now ended.
+     */
+    voteToEnd(
+        roomId: string,
+        socketId: string
+    ): { votesFor: number; votesNeeded: number; ended: boolean; roomState: Room | null } {
+        const room = this.getRoom(roomId);
+        if (!room || room.gameState !== 'PLAYING') {
+            return { votesFor: 0, votesNeeded: 0, ended: false, roomState: room };
+        }
+
+        // Initialise vote set for this room if needed
+        if (!this.endGameVotes.has(roomId)) {
+            this.endGameVotes.set(roomId, new Set());
+        }
+        this.endGameVotes.get(roomId)!.add(socketId);
+
+        const humanPlayers = room.players.filter(p => !p.isAI);
+        const votesFor   = this.endGameVotes.get(roomId)!.size;
+        const votesNeeded = Math.ceil(humanPlayers.length / 2) + (humanPlayers.length % 2 === 0 ? 0 : 0);
+        // Majority = more than half
+        const majority = votesFor > humanPlayers.length / 2;
+
+        if (majority) {
+            const ended = this.forceEndGame(roomId);
+            this.endGameVotes.delete(roomId);
+            return { votesFor, votesNeeded, ended: true, roomState: ended };
+        }
+
+        return { votesFor, votesNeeded, ended: false, roomState: room };
+    }
+
+    /**
+     * Forcefully ends the game with no winner (e.g. when players vote to end).
+     * All identities are left exposed in the returned room state.
+     */
+    forceEndGame(roomId: string): Room | null {
+        const room = this.getRoom(roomId);
+        if (!room) return null;
+
+        db.prepare(`
+            UPDATE rooms
+            SET state = 'ENDED', players_json = ?
+            WHERE id = ?
+        `).run(JSON.stringify(room.players), roomId);
+
+        // Record in history with no winner
+        db.prepare(`
+            INSERT INTO games_history (room_id, winner_id, winner_name, players_json)
+            VALUES (?, NULL, 'No winner (vote to end)', ?)
+        `).run(roomId, JSON.stringify(room.players));
 
         return this.getRoom(roomId);
     }

@@ -11,15 +11,23 @@ export const useGameStore = defineStore('game', () => {
     const myId = ref<string>('');
     const logs = ref<any[]>([]);
     const error = ref<string>('');
-    const winner = ref<any>(null); // For Game Over screen
+    const winner = ref<any>(null);
 
     const publicRooms = ref<any[]>([]);
     const invites = ref<any[]>([]);
 
+    /** Raw string entered by the host in the lobby (one name per line or comma-separated). */
+    const customNamesRaw = ref<string>('');
+
+    /** End-game vote tally received from the server. */
+    const endGameVote = ref<{ votesFor: number; votesNeeded: number } | null>(null);
+    /** Whether this client has already cast an end-game vote. */
+    const hasVotedToEnd = ref<boolean>(false);
+
     // Connect to backend
     const connect = async () => {
         if (socket.value) return;
-        
+
         let token = '';
         let userId = '';
         try {
@@ -35,11 +43,9 @@ export const useGameStore = defineStore('game', () => {
         }
 
         socket.value = io('http://localhost:8080', {
-            auth: {
-                token
-            }
+            auth: { token }
         });
-        
+
         socket.value.on('connect', () => {
              myId.value = socket.value?.id || '';
              console.log('Connected to server:', myId.value);
@@ -53,7 +59,6 @@ export const useGameStore = defineStore('game', () => {
             players.value = room.players;
             gameState.value = room.gameState;
             currentTurn.value = room.players[room.currentTurnIndex]?.id || '';
-            // Sync local room ID if needed
         });
 
         socket.value.on('game_started', (room: any) => {
@@ -61,31 +66,38 @@ export const useGameStore = defineStore('game', () => {
             players.value = room.players;
             currentTurn.value = room.players[room.currentTurnIndex]?.id || '';
             gameState.value = 'PLAYING';
-            winner.value = null; // Reset winner
-            logs.value = []; // Reset logs
-            // Logic to transition to Game View if not already
+            winner.value = null;
+            logs.value = [];
+            endGameVote.value = null;
+            hasVotedToEnd.value = false;
+            customNamesRaw.value = '';
         });
-        
+
         socket.value.on('game_over', ({ winner: w, players: p }: any) => {
              console.log('Game Over', w);
              winner.value = w;
-             players.value = p; // Update players to show all identities (backend should reveal them or we assume they are revealed)
+             players.value = p;
              gameState.value = 'ENDED';
+             endGameVote.value = null;
+             hasVotedToEnd.value = false;
         });
 
         socket.value.on('game_cancelled', () => {
-            alert('The host has cancelled the game.');
-            window.location.href = '/'; // Simple redirect for now
+            // Handled by GameView/LobbyView with a modal, not a browser alert
+            gameState.value = 'CANCELLED';
         });
-        
+
         socket.value.on('turn_result', (result: any) => {
             logs.value.push(result);
+        });
+
+        socket.value.on('end_game_vote_update', (tally: { votesFor: number; votesNeeded: number }) => {
+            endGameVote.value = tally;
         });
 
         socket.value.on('invite_received', (invite: any) => {
             console.log('Invite received:', invite);
             invites.value.push(invite);
-            // Ideally trigger a toast notification here
         });
 
         socket.value.on('error', (msg: string) => {
@@ -159,13 +171,33 @@ export const useGameStore = defineStore('game', () => {
             });
         });
     };
-    
+
+    /** Parse the host's custom names textarea into a clean string array. */
+    const parseCustomNames = (): string[] => {
+        if (!customNamesRaw.value.trim()) return [];
+        return customNamesRaw.value
+            .split(/[\n,]+/)
+            .map(n => n.trim())
+            .filter(n => n.length > 0);
+    };
+
     const startGame = () => {
-        socket.value?.emit('start_game', { roomId: roomId.value });
+        const customNames = parseCustomNames();
+        socket.value?.emit('start_game', {
+            roomId: roomId.value,
+            ...(customNames.length > 0 ? { customNames } : {}),
+        });
     };
 
     const submitAction = (action: 'QUESTION' | 'GUESS', content: string) => {
         socket.value?.emit('game_action', { roomId: roomId.value, action, content });
+    };
+
+    /** Cast a vote to end the current game early. */
+    const voteEndGame = () => {
+        if (hasVotedToEnd.value) return;
+        hasVotedToEnd.value = true;
+        socket.value?.emit('vote_end_game', { roomId: roomId.value });
     };
 
     return {
@@ -179,6 +211,10 @@ export const useGameStore = defineStore('game', () => {
         error,
         publicRooms,
         invites,
+        winner,
+        endGameVote,
+        hasVotedToEnd,
+        customNamesRaw,
         connect,
         createRoom,
         joinRoom,
@@ -187,7 +223,7 @@ export const useGameStore = defineStore('game', () => {
         getPublicRooms,
         invitePlayer,
         registerUser,
-        winner,
-        addAIPlayer
+        addAIPlayer,
+        voteEndGame,
     };
 });

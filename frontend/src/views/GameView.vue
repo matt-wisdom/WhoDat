@@ -4,13 +4,13 @@ import { onBeforeRouteLeave, useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game';
 
 const router = useRouter();
-
 const store = useGameStore();
 
 const question = ref('');
 const guess = ref('');
 const activeAction = ref<'QUESTION' | 'GUESS'>('QUESTION');
 const showExitModal = ref(false);
+const showCancelledModal = ref(false);
 const isExiting = ref(false);
 
 const myTurn = computed(() => store.currentTurn === store.myId);
@@ -20,6 +20,10 @@ const currentTurnName = computed(() => {
 });
 
 const opponents = computed(() => store.players.filter((p: any) => p.id !== store.myId));
+
+// Human players only (for showing the end-game button)
+const humanPlayers = computed(() => store.players.filter((p: any) => !p.isAI));
+const isHuman = computed(() => humanPlayers.value.some((p: any) => p.id === store.myId));
 
 const submit = () => {
     if (activeAction.value === 'QUESTION') {
@@ -33,21 +37,22 @@ const submit = () => {
     }
 };
 
-// Auto-scroll game log to bottom after each new entry
+// Auto-scroll game log to bottom
 const logsEl = ref<HTMLElement | null>(null);
 watch(() => store.logs.length, async () => {
     await nextTick();
     if (logsEl.value) logsEl.value.scrollTop = logsEl.value.scrollHeight;
 });
 
+// Show cancelled modal instead of browser alert
+watch(() => store.gameState, (newState) => {
+    if (newState === 'CANCELLED') showCancelledModal.value = true;
+});
+
 const handleBeforeUnload = (e: BeforeUnloadEvent) => {
     if (store.gameState === 'PLAYING') {
         e.preventDefault();
         e.returnValue = '';
-    } else if (store.gameState === 'LOBBY' && store.myId === store.players[0]?.id) {
-         // Host leaving lobby
-         e.preventDefault();
-         e.returnValue = '';
     }
 };
 
@@ -58,13 +63,12 @@ const goHome = () => {
 
 const confirmExit = () => {
     isExiting.value = true;
+    showExitModal.value = false;
     router.push('/');
 };
 
 onMounted(() => {
     window.addEventListener('beforeunload', handleBeforeUnload);
-    // If not connected, redirect or reconnect? 
-    // Store handles connection in App.vue usually.
 });
 
 onUnmounted(() => {
@@ -72,20 +76,9 @@ onUnmounted(() => {
 });
 
 onBeforeRouteLeave((to, from, next) => {
-    if (store.gameState === 'PLAYING') {
-        const answer = window.confirm('Are you sure you want to leave the game? You will be removed from the room.');
-        if (answer) {
-            next();
-        } else {
-            next(false);
-        }
-    } else if (store.gameState === 'LOBBY' && store.myId === store.players[0]?.id) {
-        const answer = window.confirm('You are the host. If you leave, the game will be cancelled for everyone. Are you sure?');
-        if (answer) {
-             next();
-        } else {
-             next(false);
-        }
+    if (store.gameState === 'PLAYING' && !isExiting.value) {
+        showExitModal.value = true;
+        next(false);
     } else {
         next();
     }
@@ -94,18 +87,28 @@ onBeforeRouteLeave((to, from, next) => {
 
 <template>
   <div class="game">
+
     <!-- Game Over Modal -->
     <div v-if="store.gameState === 'ENDED'" class="modal-overlay">
         <div class="modal">
             <h2>Game Over!</h2>
             <h3 v-if="store.winner">Winner: {{ store.winner.name }}</h3>
-            
+            <h3 v-else class="no-winner">Game ended by vote</h3>
+
             <div class="results-grid">
-                <div v-for="player in store.players" :key="player.id" class="result-card" :class="{ winner: player.id === store.winner?.id }">
-                    <img v-if="player.secretIdentity?.image" :src="player.secretIdentity.image" class="result-img" />
+                <div
+                    v-for="player in store.players"
+                    :key="player.id"
+                    class="result-card"
+                    :class="{ winner: player.id === store.winner?.id }"
+                >
+                    <img v-if="player.secretIdentity?.image" :src="player.secretIdentity.image" class="result-img" alt="Identity" />
                     <div class="result-info">
                         <h4>{{ player.name }}</h4>
                         <p class="role">{{ player.secretIdentity?.title || 'Unknown' }}</p>
+                        <p v-if="player.secretIdentity?.summary" class="identity-summary">
+                            {{ player.secretIdentity.summary }}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -114,14 +117,23 @@ onBeforeRouteLeave((to, from, next) => {
         </div>
     </div>
 
+    <!-- Game Cancelled Modal -->
+    <div v-if="showCancelledModal" class="modal-overlay">
+        <div class="modal modal--sm">
+            <h2>Game Cancelled</h2>
+            <p class="modal-text">The host has left the game.</p>
+            <button class="home-btn" @click="goHome">Back to Home</button>
+        </div>
+    </div>
+
     <!-- Exit Confirmation Modal -->
     <div v-if="showExitModal" class="modal-overlay">
-        <div class="modal">
+        <div class="modal modal--sm">
             <h2>Leave Game?</h2>
             <p class="modal-text">
-                {{ store.myId === store.players[0]?.id && store.gameState === 'LOBBY' 
-                    ? 'You are the host. The game will be cancelled for everyone.' 
-                    : 'Are you sure you want to leave? You will be removed from the room.' 
+                {{ store.myId === store.players[0]?.id && store.gameState === 'LOBBY'
+                    ? 'You are the host. The game will be cancelled for everyone.'
+                    : 'Are you sure you want to leave? You will be removed from the room.'
                 }}
             </p>
             <div class="modal-actions">
@@ -131,8 +143,10 @@ onBeforeRouteLeave((to, from, next) => {
         </div>
     </div>
 
-    <!-- Exit Game Button (top-right) -->
-    <button class="exit-btn" @click="showExitModal = true">Exit Game</button>
+    <!-- Top-right controls -->
+    <div class="top-controls">
+        <button class="exit-btn" @click="showExitModal = true">Exit Game</button>
+    </div>
 
     <div class="sidebar">
         <h3>Game Log</h3>
@@ -144,8 +158,23 @@ onBeforeRouteLeave((to, from, next) => {
                 <div v-if="log.correct" class="correct">CORRECT!</div>
             </div>
         </div>
+
+        <!-- End Game vote button — human players only, during active game -->
+        <div v-if="store.gameState === 'PLAYING' && isHuman" class="end-game-section">
+            <button
+                class="end-game-btn"
+                :class="{ voted: store.hasVotedToEnd }"
+                :disabled="store.hasVotedToEnd"
+                @click="store.voteEndGame()"
+            >
+                {{ store.hasVotedToEnd ? 'Vote Cast' : 'Vote to End Game' }}
+            </button>
+            <p v-if="store.endGameVote" class="vote-tally">
+                {{ store.endGameVote.votesFor }} / {{ humanPlayers.length }} voted to end
+            </p>
+        </div>
     </div>
-    
+
     <div class="main">
         <div class="turn-indicator" :class="{ myTurn: myTurn }">
             Current Turn: {{ myTurn ? 'YOUR TURN' : currentTurnName }}
@@ -163,7 +192,7 @@ onBeforeRouteLeave((to, from, next) => {
                     </details>
                 </div>
                 <div v-else class="identity filtered">
-                     <span class="icon">❓</span>
+                     <span class="icon">?</span>
                      <p>Identity Hidden</p>
                 </div>
             </div>
@@ -174,7 +203,7 @@ onBeforeRouteLeave((to, from, next) => {
                 <button :class="{ active: activeAction === 'QUESTION' }" @click="activeAction = 'QUESTION'">Ask Question</button>
                 <button :class="{ active: activeAction === 'GUESS' }" @click="activeAction = 'GUESS'">Make Guess</button>
             </div>
-            
+
             <div class="input-area">
                 <input v-if="activeAction === 'QUESTION'" v-model="question" placeholder="Is it an animal?" @keyup.enter="submit" />
                 <input v-else v-model="guess" placeholder="e.g. Batman" @keyup.enter="submit" />
@@ -198,16 +227,28 @@ onBeforeRouteLeave((to, from, next) => {
     gap: 1rem;
     color: var(--text-primary);
 }
+.top-controls {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 500;
+    display: flex;
+    gap: 0.5rem;
+}
 .sidebar {
-    width: 250px;
+    width: 260px;
     border-right: 1px solid var(--border-color);
     overflow-y: auto;
     padding-right: 1rem;
+    display: flex;
+    flex-direction: column;
 }
 .logs {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    flex: 1;
+    overflow-y: auto;
 }
 .log-entry {
     border-bottom: 1px solid var(--border-color);
@@ -235,6 +276,41 @@ onBeforeRouteLeave((to, from, next) => {
     color: var(--primary-color);
     font-weight: bold;
 }
+
+/* End Game vote area */
+.end-game-section {
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+.end-game-btn {
+    width: 100%;
+    padding: 0.6rem 1rem;
+    background: transparent;
+    border: 1px solid #f59e0b;
+    color: #f59e0b;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+.end-game-btn:hover:not(:disabled) {
+    background: #f59e0b;
+    color: #0f172a;
+}
+.end-game-btn.voted,
+.end-game-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.vote-tally {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin: 0.4rem 0 0;
+}
+
 .main {
     flex: 1;
     display: flex;
@@ -381,13 +457,16 @@ input:focus {
     background: var(--surface-color);
     padding: 2rem;
     border-radius: 12px;
-    max-width: 800px;
+    max-width: 860px;
     width: 90%;
     max-height: 90vh;
     overflow-y: auto;
     text-align: center;
     border: 1px solid var(--border-color);
     color: var(--text-primary);
+}
+.modal--sm {
+    max-width: 440px;
 }
 .modal h2 {
     color: var(--primary-color);
@@ -398,11 +477,43 @@ input:focus {
     margin-bottom: 2rem;
     font-size: 1.5rem;
 }
+.no-winner {
+    color: var(--text-secondary);
+}
+.modal-text {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+}
+.modal-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 1rem;
+}
+.cancel-btn {
+    padding: 0.75rem 1.5rem;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+}
+.confirm-btn {
+    padding: 0.75rem 1.5rem;
+    background: #ef4444;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+}
 .results-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1.25rem;
     margin-bottom: 2rem;
+    text-align: left;
 }
 .result-card {
     background: var(--bg-color);
@@ -412,6 +523,7 @@ input:focus {
     display: flex;
     flex-direction: column;
     align-items: center;
+    gap: 0.5rem;
 }
 .result-card.winner {
     border-color: var(--primary-color);
@@ -422,16 +534,30 @@ input:focus {
     height: 80px;
     border-radius: 50%;
     object-fit: cover;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+.result-info {
+    width: 100%;
+    text-align: center;
 }
 .result-info h4 {
-    margin: 0;
+    margin: 0 0 0.25rem;
     color: var(--text-primary);
 }
 .role {
     color: var(--primary-color);
     font-weight: bold;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
+    margin: 0 0 0.5rem;
+}
+.identity-summary {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    text-align: left;
+    margin: 0;
+    max-height: 120px;
+    overflow-y: auto;
 }
 .home-btn {
     padding: 1rem 2rem;
@@ -443,12 +569,7 @@ input:focus {
     font-weight: bold;
     cursor: pointer;
 }
-
 .exit-btn {
-    position: fixed;
-    top: 1rem;
-    right: 1rem;
-    z-index: 500;
     padding: 0.5rem 1.1rem;
     background: transparent;
     border: 1px solid #ef4444;
@@ -472,28 +593,23 @@ input:focus {
         width: 100%;
         padding: 1rem;
     }
-
     .sidebar {
         width: 100%;
-        height: 200px;
+        height: 220px;
         border-right: none;
         border-bottom: 1px solid var(--border-color);
         margin-bottom: 1rem;
     }
-
     .main {
         width: 100%;
     }
-
     .opponents {
         grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
         gap: 0.5rem;
     }
-    
     .player-card {
         padding: 0.8rem;
     }
-    
     .id-img {
         width: 60px;
         height: 60px;

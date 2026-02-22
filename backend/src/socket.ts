@@ -91,8 +91,9 @@ export const setupSocket = (io: Server) => {
             }
         });
 
-        socket.on('start_game', ({ roomId }) => {
-            gameManager.startGame(roomId).then(room => {
+        socket.on('start_game', ({ roomId, customNames }: { roomId: string; customNames?: string[] }) => {
+            const names = Array.isArray(customNames) && customNames.length > 0 ? customNames : undefined;
+            gameManager.startGame(roomId, names).then(room => {
                 if (room) {
                     broadcastGameStarted(roomId, room);
                 }
@@ -110,18 +111,37 @@ export const setupSocket = (io: Server) => {
                     result: result.result,
                     correct: result.correct
                 });
-                
+
                 if ((result as any).gameEnded) {
                     io.to(roomId).emit('game_over', {
                         winner: (result as any).winner,
                         players: result.roomState.players
                     });
                 }
-                
+
                 broadcastRoomUpdate(roomId, result.roomState);
-                
+
             } catch (error) {
                 socket.emit('error', (error as Error).message);
+            }
+        });
+
+        socket.on('vote_end_game', ({ roomId }: { roomId: string }) => {
+            const tally = gameManager.voteToEnd(roomId, socket.id);
+
+            if (tally.ended && tally.roomState) {
+                // Majority reached — game over, no winner
+                io.to(roomId).emit('game_over', {
+                    winner: null,
+                    players: tally.roomState.players
+                });
+                broadcastRoomUpdate(roomId, tally.roomState);
+            } else {
+                // Inform everyone of the updated vote count
+                io.to(roomId).emit('end_game_vote_update', {
+                    votesFor: tally.votesFor,
+                    votesNeeded: tally.votesNeeded,
+                });
             }
         });
 
@@ -141,6 +161,20 @@ export const setupSocket = (io: Server) => {
                     break;
                 }
             }
+        });
+
+        socket.on('kick_player', ({ roomId, targetId }: { roomId: string; targetId: string }, callback: (r: any) => void) => {
+            const room = gameManager.kickPlayer(roomId, socket.id, targetId);
+            if (!room) {
+                callback({ success: false, error: 'Not authorized or player not found' });
+                return;
+            }
+            // Notify the kicked player (bots have no socket — skip)
+            if (!targetId.startsWith('ai_')) {
+                io.to(targetId).emit('player_kicked');
+            }
+            broadcastRoomUpdate(roomId, room);
+            callback({ success: true });
         });
 
         socket.on('add_ai_player', ({ roomId, personaId }, callback) => {

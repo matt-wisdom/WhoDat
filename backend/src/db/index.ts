@@ -35,12 +35,24 @@ const initDb = () => {
         )
     `).run();
 
+    db.prepare(`
+        CREATE TABLE IF NOT EXISTS wiki_cache (
+            category     TEXT NOT NULL,
+            title        TEXT NOT NULL,
+            summary      TEXT NOT NULL DEFAULT '',
+            full_text    TEXT NOT NULL DEFAULT '',
+            image        TEXT NOT NULL DEFAULT '',
+            last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (category, title)
+        )
+    `).run();
+
     // Migration: Add is_public if missing (for existing DBs)
     const columns = db.prepare('PRAGMA table_info(rooms)').all() as any[];
     if (!columns.find(c => c.name === 'is_public')) {
         db.prepare('ALTER TABLE rooms ADD COLUMN is_public BOOLEAN DEFAULT 0').run();
     }
-    
+
     console.log('Database initialized at', dbPath);
 };
 

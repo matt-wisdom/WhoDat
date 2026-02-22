@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import { checkJwt, authMiddleware } from './middleware/auth.js';
 import gameRoutes from './routes/game.js';
 import { setupSocket } from './socket.js';
+import { initCache } from './services/wikiCache.js';
 
 dotenv.config();
 
@@ -40,4 +41,7 @@ app.use('/api/game', checkJwt, gameRoutes);
 
 httpServer.listen(port, () => {
   console.log(`Server starting on port ${port}`);
+  // Populate / refresh the wiki article cache in the background
+  initCache();
 });
+

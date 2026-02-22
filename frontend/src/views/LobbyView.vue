@@ -10,7 +10,6 @@ const router = useRouter();
 
 const roomId = route.params.roomId as string;
 const players = computed(() => store.players);
-// Fix: Ensure store.players is accessed safely
 const isHost = computed(() => store.players.length > 0 && store.players[0]?.id === store.myId);
 
 const startGame = () => {
@@ -57,28 +56,37 @@ watch(() => store.gameState, (newState) => {
 });
 
 onMounted(async () => {
-    // If we have a roomId but no players/state (likely refresh), try to rejoin
     if (roomId && (!store.players.length || store.roomId !== roomId)) {
         console.log('Refreshing or direct link: joining room', roomId);
-        // Ensure connection first
         await store.connect();
-        
-        // Wait a brief moment for socket to be ready if needed, though connect() should handle it
-        // The joinRoom action in store handles the emit
         const success = await store.joinRoom(roomId, user.value?.fullName || 'Returning Player');
         if (!success) {
-            alert('Failed to rejoin room. It may have expired.');
-            router.push('/');
+            inviteStatus.value = 'Failed to rejoin room. It may have expired.';
+            setTimeout(() => router.push('/'), 2500);
         }
     }
     checkGameState();
 });
+
+/** Derived count of custom names parsed from the textarea. */
+const parsedNameCount = computed(() => {
+    if (!store.customNamesRaw.trim()) return 0;
+    return store.customNamesRaw
+        .split(/[\n,]+/)
+        .map(n => n.trim())
+        .filter(n => n.length > 0).length;
+});
+
+/** True when custom names are set but not enough for all players. */
+const notEnoughNames = computed(() =>
+    parsedNameCount.value > 0 && parsedNameCount.value < players.value.length
+);
 </script>
 
 <template>
   <div class="lobby">
     <h2>Lobby: {{ roomId }}</h2>
-    
+
     <div class="players">
       <h3>Players</h3>
       <ul v-if="players.length">
@@ -89,7 +97,7 @@ onMounted(async () => {
       <p v-else>Loading players...</p>
     </div>
 
-    <!-- AI Section Moved Up -->
+    <!-- Bot Section -->
     <div class="ai-section">
         <h3>Add Bot Player</h3>
         <div class="ai-controls">
@@ -104,14 +112,37 @@ onMounted(async () => {
         <p v-if="inviteStatus && inviteStatus.includes('Bot')">{{ inviteStatus }}</p>
     </div>
 
+    <!-- Custom Names (host only) -->
+    <div v-if="isHost" class="custom-names-section">
+        <h3>Custom Identities (optional)</h3>
+        <p class="hint">Enter names to use as secret identities instead of the default Wikipedia list. One name per line or comma-separated.</p>
+        <textarea
+            v-model="store.customNamesRaw"
+            placeholder="e.g. Batman, Sherlock Holmes, Albert Einstein"
+            rows="5"
+        ></textarea>
+        <p class="name-count" v-if="parsedNameCount > 0">
+            {{ parsedNameCount }} name{{ parsedNameCount !== 1 ? 's' : '' }} entered
+            <span v-if="notEnoughNames" class="warn">
+                — need at least {{ players.length }} for {{ players.length }} players
+            </span>
+        </p>
+    </div>
+
     <div v-if="isHost" class="controls">
-      <button @click="startGame" :disabled="players.length < 2">Start Game</button>
+      <button
+        @click="startGame"
+        :disabled="players.length < 2 || notEnoughNames"
+      >
+        Start Game
+      </button>
       <p v-if="players.length < 2">Need at least 2 players</p>
+      <p v-if="notEnoughNames" class="warn">Not enough custom names for all players</p>
     </div>
     <div v-else>
       <p>Waiting for host to start...</p>
     </div>
-    
+
     <div class="invite-section">
         <h3>Invite Friend</h3>
         <p>Share Room Code: <strong>{{ roomId }}</strong></p>
@@ -128,13 +159,16 @@ onMounted(async () => {
 .lobby {
   text-align: center;
   color: var(--text-primary);
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 1.5rem;
 }
 ul {
   list-style: none;
   padding: 0;
 }
 li {
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   margin: 0.5rem 0;
   background: var(--surface-color);
   padding: 0.5rem;
@@ -192,5 +226,48 @@ select {
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-radius: 4px;
+}
+
+/* Custom names section */
+.custom-names-section {
+    margin-top: 2rem;
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+    text-align: left;
+}
+.custom-names-section h3 {
+    text-align: center;
+}
+.hint {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+    text-align: center;
+}
+textarea {
+    width: 100%;
+    padding: 0.65rem 0.75rem;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+    box-sizing: border-box;
+}
+textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+.name-count {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.4rem;
+    text-align: center;
+}
+.warn {
+    color: #f59e0b;
+    font-weight: 600;
 }
 </style>

@@ -74,8 +74,13 @@ export const checkSimilarity = async (
             `Answer with only Yes or No.`;
 
         const messages = [
-            { role: 'system', content: 'You are a helpful assistant. Answer with only Yes or No.' },
-            { role: 'user',   content: userMessage },
+            {
+                role: 'system',
+                content:
+                    `You are a helpful assistant. Answer with only Yes or No. ` +
+                    `Current date and time: ${new Date().toUTCString()}.`,
+            },
+            { role: 'user', content: userMessage },
         ];
 
         const output = await qa(messages, { max_new_tokens: 10 });
@@ -101,7 +106,8 @@ export const answerQuestion = async (question: string, context: string): Promise
                 role: 'system',
                 content:
                     'You are answering questions in a guessing game. ' +
-                    'Use the provided context to answer with only Yes or No.',
+                    'Use the provided context to answer with only Yes or No. ' +
+                    `Current date and time: ${new Date().toUTCString()}.`,
             },
             {
                 role: 'user',
@@ -129,15 +135,30 @@ export const generateAITurn = async (
     history: string[]
 ): Promise<{ action: 'QUESTION' | 'GUESS'; content: string }> => {
     try {
+        const answeredCount = history.length;
+        const guessPrompt =
+            answeredCount >= 5
+                ? `\n\nIMPORTANT: You have received ${answeredCount} answers already. You MUST make a GUESS now unless you have zero useful information. Do not ask another question.`
+                : answeredCount >= 3
+                ? `\n\nYou have ${answeredCount} answers. Strongly consider making a GUESS if you can narrow down the identity from what you know.`
+                : '';
+
         const prompt = `
         ${persona.systemPrompt}
-        
+
         Current Game Context:
         We are playing "Who/What Am I?". You must guess your own secret identity by asking YES/NO questions.
-        Category: ${category} — your secret identity is something from this category. Ask questions relevant to this category only.
-        
-        Your Q&A history so far:
-        ${history.length > 0 ? history.join('\n') : 'No questions asked yet.'}
+        The identity is ALWAYS a real, well-known entity — never fictional.
+        Category: ${category}. The identity belongs to this category. Ask questions specific to this category.
+
+        Your Q&A history so far (read carefully — build on every answer):
+        ${history.length > 0 ? history.join('\n') : 'No questions asked yet.'}${guessPrompt}
+
+        Rules:
+        - NEVER repeat a question already in the history above.
+        - Use every Yes and No answer to eliminate possibilities and focus your next move.
+        - If you have enough to make a confident guess, choose GUESS over asking more questions.
+        - Your guess must be a real name (e.g. "Albert Einstein", "France", "Mount Everest").
         
         Based on the history above, ask a smart YES/NO question to narrow down your identity, or make a GUESS if you are confident.
         Do NOT repeat questions already asked.
