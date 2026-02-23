@@ -34,7 +34,7 @@ services:
         VITE_CLERK_PUBLISHABLE_KEY: "${VITE_CLERK_PUBLISHABLE_KEY}"
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8090:80"
     depends_on:
       backend:
         condition: service_healthy
