@@ -1,5 +1,6 @@
 # ---- Build stage ----
-FROM node:20-alpine AS builder
+# Use slim (Debian-based) for glibc compatibility with onnxruntime-node native bindings
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
@@ -12,7 +13,9 @@ COPY src ./src
 RUN npm run build
 
 # ---- Runtime stage ----
-FROM node:20-alpine
+# Must stay on Debian/glibc — alpine (musl) lacks ld-linux-x86-64.so.2
+# which is required by the onnxruntime-node native .so files.
+FROM node:20-slim
 
 WORKDIR /app
 
