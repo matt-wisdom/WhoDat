@@ -33,16 +33,17 @@ const getQaModel = async () => {
 
 /**
  * Extracts a Yes/No answer from the model's reply text.
- * Causal models can include filler words before the answer, so we scan the
- * beginning of the response rather than rely on a strict startsWith check.
+ * Uses word-boundary matching to avoid false positives from words like
+ * "cannot", "unknown", "knowledge", "not", etc.
  */
 const extractYesNo = (raw: string): 'Yes' | 'No' => {
     const lower = raw.toLowerCase().trim();
-    const head = lower.slice(0, 20);
-    if (head.includes('yes')) return 'Yes';
-    if (head.includes('no')) return 'No';
-    // Broader scan as fallback
-    if (lower.includes('yes')) return 'Yes';
+    // Look for the last explicit answer marker first ("answer: yes" / "answer: no")
+    const markerMatch = lower.match(/answer:\s*(yes|no)/);
+    if (markerMatch) return markerMatch[1] === 'yes' ? 'Yes' : 'No';
+    // Fall back to word-boundary scan
+    if (/\byes\b/.test(lower)) return 'Yes';
+    if (/\bno\b/.test(lower)) return 'No';
     return 'No';
 };
 
@@ -105,20 +106,25 @@ export const answerQuestion = async (question: string, context: string): Promise
             {
                 role: 'system',
                 content:
-                    'You are answering questions in a guessing game. ' +
-                    'Use the provided context to answer with only Yes or No. ' +
+                    'You are a factual assistant for a guessing game. ' +
+                    'You will receive Wikipedia context about a secret identity and a Yes/No question about that identity. ' +
+                    'Read the context carefully. Note that game questions use first-person ("Are you alive?", "Are you male?") — ' +
+                    'these always refer to the secret identity described in the context, not to you. ' +
+                    'Think briefly, then finish with "Answer: Yes" or "Answer: No". ' +
                     `Current date and time: ${new Date().toUTCString()}.`,
             },
             {
                 role: 'user',
                 content:
-                    `Context: ${context.slice(0, 4_000)}\n\n` +
-                    `Question: ${question}`,
+                    `Wikipedia context about the secret identity:\n${context.slice(0, 3_500)}\n\n` +
+                    `Game question (refers to the identity above): "${question}"\n` +
+                    `Answer with: Answer: Yes  or  Answer: No`,
             },
         ];
 
-        const output = await qa(messages, { max_new_tokens: 10 });
+        const output = await qa(messages, { max_new_tokens: 80 });
         const raw: string = output[0]?.generated_text?.at(-1)?.content ?? '';
+        console.log('[QA-DEBUG] raw response:', raw.slice(0, 120));
         return extractYesNo(raw);
     } catch (error) {
         console.error('Error in answerQuestion (Qwen2.5):', error);
