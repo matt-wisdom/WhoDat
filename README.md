@@ -1,6 +1,6 @@
 # WhoDat
 
-A real-time multiplayer "Who/What Am I?" guessing game. Each player is secretly assigned a real Wikipedia identity (or a host-supplied custom name) and must figure out who they are by asking yes/no questions on their turn.
+A real-time multiplayer "Who/What Am I?" guessing game I made for fun to play with friends. Each player is secretly assigned a real Wikipedia identity (or a host-supplied custom name) and must figure out who they are by asking yes/no questions on their turn.
 
 ---
 
