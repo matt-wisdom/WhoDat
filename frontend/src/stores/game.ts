@@ -39,7 +39,11 @@ export const useGameStore = defineStore('game', () => {
             console.error('Failed to get token', e);
         }
 
-        socket.value = io('http://localhost:8080', {
+        // In Docker, VITE_API_URL is empty so socket.io connects to the same
+        // origin (nginx proxies /socket.io/ to the backend container).
+        // In local dev it falls back to the explicit backend address.
+        const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
+        socket.value = io(apiUrl, {
             auth: { token }
         });
 

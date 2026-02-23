@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 
-// Initialize DB
-const dbPath = path.resolve('game.db');
+// Initialize DB — path is configurable via DB_PATH so Docker can mount a volume.
+const dbPath = process.env.DB_PATH || path.resolve('game.db');
 const db = new Database(dbPath);
 
 // Enable WAL mode for better concurrency
