@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { onBeforeRouteLeave, useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game';
+import HelpModal from '../components/HelpModal.vue';
 
 const router = useRouter();
 const store = useGameStore();
@@ -11,6 +12,7 @@ const guess = ref('');
 const activeAction = ref<'QUESTION' | 'GUESS'>('QUESTION');
 const showExitModal = ref(false);
 const showCancelledModal = ref(false);
+const showHelp = ref(false);
 const isExiting = ref(false);
 
 const myTurn = computed(() => store.currentTurn === store.myId);
@@ -173,6 +175,8 @@ onBeforeRouteLeave((to, from, next) => {
                 {{ store.endGameVote.votesFor }} / {{ humanPlayers.length }} voted to end
             </p>
         </div>
+
+        <button class="help-btn" @click="showHelp = true" title="How to play">? How to Play</button>
     </div>
 
     <div class="main">
@@ -214,6 +218,8 @@ onBeforeRouteLeave((to, from, next) => {
             Waiting for {{ currentTurnName }}...
         </div>
     </div>
+
+    <HelpModal v-if="showHelp" @close="showHelp = false" />
   </div>
 </template>
 
@@ -614,5 +620,22 @@ input:focus {
         width: 60px;
         height: 60px;
     }
+}
+.help-btn {
+  margin-top: 1rem;
+  width: 100%;
+  padding: 0.5rem;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.help-btn:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
 }
 </style>

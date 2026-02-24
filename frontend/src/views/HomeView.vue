@@ -5,6 +5,9 @@ import { SignedIn, SignedOut, SignInButton, UserButton, useUser } from '@clerk/v
 import { useGameStore } from '../stores/game';
 import { useRouter } from 'vue-router';
 import { Copy, Check, Plus, RefreshCw, Users, ArrowRight, Play } from '../components/icons';
+import HelpModal from '../components/HelpModal.vue';
+
+const showHelp = ref(false);
 
 const { user } = useUser();
 const store = useGameStore();
@@ -49,6 +52,7 @@ const copyToClipboard = () => {
     <header class="navbar">
         <h1 class="logo">WhoDat</h1>
         <div class="user-action">
+            <button class="help-btn" @click="showHelp = true" title="How to play">?</button>
             <SignedOut>
                 <SignInButton mode="modal" />
             </SignedOut>
@@ -148,6 +152,8 @@ const copyToClipboard = () => {
             </div>
         </SignedOut>
     </main>
+
+    <HelpModal v-if="showHelp" @close="showHelp = false" />
   </div>
 </template>
 
@@ -508,5 +514,29 @@ const copyToClipboard = () => {
 .hero-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 10px 20px rgba(16, 185, 129, 0.3);
+}
+.user-action {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.help-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s, color 0.15s;
+}
+.help-btn:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
 }
 </style>

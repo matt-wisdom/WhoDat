@@ -3,6 +3,9 @@ import { computed, ref, watch, onMounted } from 'vue';
 import { useUser } from '@clerk/vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game';
+import HelpModal from '../components/HelpModal.vue';
+
+const showHelp = ref(false);
 
 const store = useGameStore();
 const route = useRoute();
@@ -87,7 +90,10 @@ const notEnoughNames = computed(() =>
 
 <template>
   <div class="lobby">
-    <h2>Lobby: {{ roomId }}</h2>
+    <div class="lobby-header">
+      <h2>Lobby: {{ roomId }}</h2>
+      <button class="help-btn" @click="showHelp = true" title="How to play">?</button>
+    </div>
 
     <div class="players">
       <h3>Players</h3>
@@ -159,6 +165,8 @@ const notEnoughNames = computed(() =>
         </div>
         <p v-if="inviteStatus && !inviteStatus.includes('Bot')">{{ inviteStatus }}</p>
     </div>
+
+    <HelpModal v-if="showHelp" @close="showHelp = false" />
   </div>
 </template>
 
@@ -203,6 +211,35 @@ li {
 .kick-btn:hover {
   background: #ef4444;
   color: #fff;
+}
+.lobby-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.lobby-header h2 {
+  margin: 0;
+}
+.help-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s, color 0.15s;
+}
+.help-btn:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
 }
 .controls {
   margin-top: 2rem;
