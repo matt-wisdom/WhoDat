@@ -595,30 +595,77 @@ input:focus {
     .game {
         flex-direction: column;
         height: auto;
-        min-height: 100vh;
+        min-height: 100svh;
         width: 100%;
-        padding: 1rem;
+        padding: 0.5rem;
+        padding-top: 3rem; /* clear fixed top-controls */
+        box-sizing: border-box;
+        gap: 0.5rem;
+    }
+    .top-controls {
+        top: 0.5rem;
+        right: 0.5rem;
+        gap: 0.35rem;
     }
     .sidebar {
         width: 100%;
-        height: 220px;
+        height: auto;
+        max-height: 220px;
         border-right: none;
         border-bottom: 1px solid var(--border-color);
-        margin-bottom: 1rem;
+        padding-right: 0;
+        padding-bottom: 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+    .logs {
+        max-height: 120px;
+        overflow-y: auto;
     }
     .main {
         width: 100%;
     }
+    .turn-indicator {
+        font-size: 1rem;
+        padding: 0.6rem;
+        margin-bottom: 0.5rem;
+    }
     .opponents {
-        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
         gap: 0.5rem;
+        padding: 0.5rem;
     }
     .player-card {
-        padding: 0.8rem;
+        padding: 0.7rem;
     }
     .id-img {
-        width: 60px;
-        height: 60px;
+        width: 55px;
+        height: 55px;
+    }
+    .id-title {
+        font-size: 0.9rem;
+    }
+    .actions {
+        border-radius: 0;
+        padding: 0.75rem;
+        position: sticky;
+        bottom: 0;
+    }
+    /* Prevent iOS Safari from zooming on input focus */
+    input {
+        font-size: 16px !important;
+    }
+    .input-area {
+        flex-direction: column;
+    }
+    .input-area input {
+        width: 100%;
+    }
+    .input-area button {
+        width: 100%;
+        padding: 0.7rem;
+    }
+    .end-game-section {
+        margin-top: 0.5rem;
     }
 }
 .help-btn {

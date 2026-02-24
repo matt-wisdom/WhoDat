@@ -539,4 +539,47 @@ const copyToClipboard = () => {
   border-color: var(--primary-color);
   color: var(--primary-color);
 }
+
+@media (max-width: 640px) {
+  .navbar {
+    padding: 0.75rem 1rem;
+  }
+  .logo {
+    font-size: 1.4rem;
+  }
+  .main-content {
+    padding: 1rem;
+  }
+  .user-id-pill {
+    max-width: 100%;
+    overflow: hidden;
+  }
+  .id-text {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+  }
+  .dashboard-grid {
+    gap: 1rem;
+  }
+  .action-card {
+    padding: 1rem;
+    gap: 1rem;
+  }
+  .join-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+  }
+  .input-group {
+    flex-direction: column;
+  }
+  .input-group button {
+    width: 100%;
+    padding: 0.8rem;
+    justify-content: center;
+  }
+}
 </style>

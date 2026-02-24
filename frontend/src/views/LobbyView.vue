@@ -336,4 +336,27 @@ textarea:focus {
     color: #f59e0b;
     font-weight: 600;
 }
+
+@media (max-width: 640px) {
+  .lobby {
+    padding: 0.75rem;
+  }
+  .lobby h2 {
+    font-size: 1.3rem;
+  }
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .controls button {
+    width: 100%;
+  }
+  textarea {
+    font-size: 16px !important;
+  }
+  .invite-section input {
+    font-size: 16px !important;
+  }
+}
 </style>

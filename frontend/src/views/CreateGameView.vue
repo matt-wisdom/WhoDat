@@ -179,4 +179,27 @@ button.secondary:hover {
     color: var(--text-primary);
     border-color: var(--text-primary);
 }
+
+@media (max-width: 640px) {
+  .create-game {
+    padding: 0 1rem;
+  }
+  .actions {
+    flex-direction: column;
+  }
+  .actions button,
+  .actions a {
+    width: 100%;
+  }
+  .actions a button {
+    width: 100%;
+  }
+  .option {
+    padding: 1rem;
+  }
+  .category-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem;
+  }
+}
 </style>
